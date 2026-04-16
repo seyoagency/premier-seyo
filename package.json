@@ -1,0 +1,8 @@
+{
+  "name": "premiere-cut",
+  "version": "1.0.0",
+  "description": "Auto-Cut silence/breath removal and Auto-SRT subtitle generation for Premiere Pro",
+  "author": "SEYO",
+  "license": "MIT",
+  "private": true
+}

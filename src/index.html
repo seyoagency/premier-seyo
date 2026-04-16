@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="./ui/styles.css" />
+</head>
+<body>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="autocut">AUTO-CUT</button>
+    <button class="tab" data-tab="autosrt">AUTO-SRT</button>
+  </div>
+
+  <!-- AUTO-CUT Tab -->
+  <div class="tab-content" id="tab-autocut">
+
+    <div class="dep-check" id="dep-check-cut" style="display:none;">
+      <div class="dep-item">
+        <span class="dep-icon" id="dep-ffmpeg-icon">-</span>
+        <span>FFmpeg</span>
+      </div>
+      <div class="dep-item">
+        <span class="dep-icon" id="dep-whisper-icon">-</span>
+        <span>whisper-cli</span>
+      </div>
+      <div class="dep-item">
+        <span class="dep-icon" id="dep-model-icon">-</span>
+        <span>Whisper Model</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Tespit Ayarlari</div>
+
+      <div class="row">
+        <label>Sessizlik</label>
+        <input type="range" id="silenceThreshold" min="-50" max="-20" value="-35" step="1" />
+        <span class="value" id="silenceThreshold-val">-35 dB</span>
+      </div>
+
+      <div class="row">
+        <label>Min. Sessizlik</label>
+        <input type="range" id="minSilenceDuration" min="0.2" max="2.0" value="0.4" step="0.1" />
+        <span class="value" id="minSilenceDuration-val">0.4s</span>
+      </div>
+
+      <div class="row">
+        <label>Padding</label>
+        <input type="range" id="padding" min="0" max="500" value="150" step="10" />
+        <span class="value" id="padding-val">150ms</span>
+      </div>
+
+      <div class="cbrow">
+        <input type="checkbox" id="detectBreaths" checked />
+        <label for="detectBreaths">Nefes seslerini de kes</label>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="collapsible-header" id="advanced-cut-toggle">
+        <span id="advanced-cut-arrow">&#9654;</span>
+        <span>Gelismis Ayarlar</span>
+      </div>
+      <div class="collapsible-body" id="advanced-cut-body" style="display:none;">
+        <div class="row">
+          <label>Min. Konusma</label>
+          <input type="range" id="minKeepDuration" min="0.1" max="1.0" value="0.3" step="0.05" />
+          <span class="value" id="minKeepDuration-val">0.3s</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-analyze">Analiz Et</button>
+
+    <div class="progress-container" id="progress-cut" style="display:none;">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-cut-fill"></div>
+      </div>
+      <div class="progress-text" id="progress-cut-text">Analiz ediliyor...</div>
+    </div>
+
+    <div class="results" id="results-cut" style="display:none;">
+      <div class="results-header">Analiz Sonucu</div>
+
+      <div class="stat-row">
+        <span class="stat-label">Sessiz Bolge</span>
+        <span class="stat-value" id="stat-silence-count">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Nefes Bolge</span>
+        <span class="stat-value" id="stat-breath-count">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Kesilecek</span>
+        <span class="stat-value danger" id="stat-remove-time">0s</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Kalan</span>
+        <span class="stat-value accent" id="stat-keep-time">0s</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Azalma</span>
+        <span class="stat-value" id="stat-reduction">0%</span>
+      </div>
+
+      <div class="waveform" id="waveform"></div>
+
+      <button class="btn btn-success" id="btn-apply-cut">Uygula</button>
+    </div>
+
+  </div>
+
+  <!-- AUTO-SRT Tab -->
+  <div class="tab-content" id="tab-autosrt" style="display:none;">
+
+    <div class="dep-check" id="dep-check-srt" style="display:none;">
+      <div class="dep-item">
+        <span class="dep-icon">-</span>
+        <span>Whisper kontrol ediliyor...</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Transkripsiyon</div>
+
+      <div class="row">
+        <label>Dil</label>
+        <select id="srt-language">
+          <option value="auto">Otomatik</option>
+          <option value="tr" selected>Turkce</option>
+          <option value="en">English</option>
+          <option value="de">Deutsch</option>
+          <option value="fr">Francais</option>
+          <option value="es">Espanol</option>
+        </select>
+        <span></span>
+      </div>
+
+      <div class="row">
+        <label>Model</label>
+        <select id="srt-model">
+          <option value="large-v3">large-v3</option>
+          <option value="medium">medium</option>
+          <option value="small">small</option>
+          <option value="base">base</option>
+        </select>
+        <span></span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Altyazi Bicimi</div>
+
+      <div class="row">
+        <label>Satir/Altyazi</label>
+        <div class="stepper">
+          <button class="stepper-btn" data-target="maxLinesPerSub" data-dir="-1">-</button>
+          <span class="stepper-value" id="maxLinesPerSub-val">2</span>
+          <button class="stepper-btn" data-target="maxLinesPerSub" data-dir="1">+</button>
+        </div>
+        <span></span>
+      </div>
+
+      <div class="row">
+        <label>Kelime/Satir</label>
+        <div class="stepper">
+          <button class="stepper-btn" data-target="maxWordsPerLine" data-dir="-1">-</button>
+          <span class="stepper-value" id="maxWordsPerLine-val">6</span>
+          <button class="stepper-btn" data-target="maxWordsPerLine" data-dir="1">+</button>
+        </div>
+        <span></span>
+      </div>
+
+      <div class="row">
+        <label>Karakter/Satir</label>
+        <input type="range" id="maxCharsPerLine" min="20" max="60" value="42" step="1" />
+        <span class="value" id="maxCharsPerLine-val">42</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="collapsible-header" id="advanced-srt-toggle">
+        <span id="advanced-srt-arrow">&#9654;</span>
+        <span>Zamanlama Ayarlari</span>
+      </div>
+      <div class="collapsible-body" id="advanced-srt-body" style="display:none;">
+        <div class="row">
+          <label>Max sure</label>
+          <input type="range" id="maxSubDuration" min="2" max="10" value="5" step="0.5" />
+          <span class="value" id="maxSubDuration-val">5s</span>
+        </div>
+        <div class="row">
+          <label>Min sure</label>
+          <input type="range" id="minSubDuration" min="0.5" max="3" value="1" step="0.5" />
+          <span class="value" id="minSubDuration-val">1s</span>
+        </div>
+        <div class="row">
+          <label>CPS limiti</label>
+          <input type="range" id="cpsLimit" min="10" max="30" value="20" step="1" />
+          <span class="value" id="cpsLimit-val">20</span>
+        </div>
+        <div class="cbrow">
+          <input type="checkbox" id="splitOnSentence" checked />
+          <label for="splitOnSentence">Cumle sonunda bol</label>
+        </div>
+        <div class="cbrow">
+          <input type="checkbox" id="splitOnPause" checked />
+          <label for="splitOnPause">Dogal duraklarda bol</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Cikti Formati</div>
+      <div class="format-row">
+        <div class="cbrow">
+          <input type="checkbox" id="output-srt" checked />
+          <label for="output-srt">SRT</label>
+        </div>
+        <div class="cbrow">
+          <input type="checkbox" id="output-vtt" />
+          <label for="output-vtt">VTT</label>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-transcribe">Transkript Et</button>
+
+    <div class="progress-container" id="progress-srt" style="display:none;">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-srt-fill"></div>
+      </div>
+      <div class="progress-text" id="progress-srt-text">Transkript ediliyor...</div>
+    </div>
+
+    <div class="results" id="results-srt" style="display:none;">
+      <div class="results-header">Altyazi Onizleme</div>
+      <div class="srt-preview" id="srt-preview"></div>
+      <button class="btn btn-success" id="btn-save-srt">Kaydet</button>
+    </div>
+
+  </div>
+
+  <div class="status-bar" id="status-bar">PremiereCut v1.0 - Hazir</div>
+
+  <script src="./index.js"></script>
+</body>
+</html>
