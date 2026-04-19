@@ -35,9 +35,88 @@ async function transcribe(audioPath, { language = "auto", model = "large-v3" } =
  * Format: { transcription: [{ timestamps: {from, to}, text, offsets: {from, to} }] }
  */
 function parseWhisperOutput(whisperJson) {
+  if (!whisperJson) return [];
+
+  // whisper-cli -oj -ojf bazen hem "segments" hem "transcription" donduruyor.
+  // Ikisi ayni metni temsil ettigi icin segments varsa onu tek kaynak kabul et.
+  const rawSegments = Array.isArray(whisperJson.segments) && whisperJson.segments.length > 0
+    ? whisperJson.segments
+    : (Array.isArray(whisperJson.transcription) ? whisperJson.transcription : []);
+
   const segments = [];
 
-  if (!whisperJson) return segments;
+  for (const item of rawSegments) {
+    const normalized = normalizeSegment(item);
+    if (normalized && normalized.text) segments.push(normalized);
+  }
+
+  return segments.sort((a, b) => a.start - b.start);
+}
+
+function normalizeSegment(item) {
+  if (!item) return null;
+
+  const timestamps = item.timestamps || {};
+  const start = firstNumber(
+    item.start,
+    timestamps.from,
+    item.offsets?.from
+  );
+  const end = firstNumber(
+    item.end,
+    timestamps.to,
+    item.offsets?.to
+  );
+
+  const words = normalizeWords(item.words || item.tokens || []);
+  const text = (item.text || words.map(w => w.text).join(" ")).trim();
+
+  const wordStart = words.length ? words[0].start : start;
+  const wordEnd = words.length ? words[words.length - 1].end : end;
+
+  return {
+    text,
+    start: Number.isFinite(start) ? start : wordStart,
+    end: Number.isFinite(end) ? end : wordEnd,
+    words,
+  };
+}
+
+function normalizeWords(rawWords) {
+  if (!Array.isArray(rawWords)) return [];
+  return rawWords
+    .map((w) => {
+      const text = (w.text || w.word || w.token || "").trim();
+      const start = firstNumber(w.start, w.timestamps?.from, w.offsets?.from);
+      const end = firstNumber(w.end, w.timestamps?.to, w.offsets?.to);
+      if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+        return null;
+      }
+      return { text, start, end };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue;
+    const parsed = parseTimestamp(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return NaN;
+}
+
+/*
+  Eski format referansi:
+  { transcription: [{ timestamps: {from, to}, text }] }
+
+  Not: Bu blok bilincli olarak devre disi. Yukaridaki normalizeSegment hem
+  transcription hem de segments formatini tek yoldan isliyor; iki formati ust
+  uste eklemek tekrarli altyazi uretiyordu.
+*/
+function parseWhisperOutputLegacy(whisperJson) {
+  const segments = [];
 
   if (whisperJson.transcription && Array.isArray(whisperJson.transcription)) {
     for (const item of whisperJson.transcription) {

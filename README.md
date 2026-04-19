@@ -7,7 +7,7 @@ Adobe Premiere Pro 2026 icin otomatik sessizlik kesimi ve altyazi uretim eklenti
 **AUTO-CUT**
 - FFmpeg `silencedetect` ile sessiz bolgeleri otomatik tespit eder
 - Nefes sesleri ve kisa sessizlikleri opsiyonel olarak keser
-- Orijinal sequence'e dokunmadan duplicate uzerinde calisir (gevenli)
+- Aktif sequence uzerinde yerinde kesim yapar; Cmd+Z ile tek adimda geri alinabilir
 - Padding, esik degeri, minimum sure gibi profesyonel parametreler
 
 **AUTO-SRT**
@@ -112,10 +112,10 @@ Window > UXP Plugins > PremiereCut > PremiereCut
 ### AUTO-CUT
 
 1. Sequence'i ac, kesmek istedigin klibi timeline'a ekle
-2. Plugin panelinde **Sessizlik Esigi** (default -35 dB) ve **Min. Sessizlik** (0.4s) ayarla
+2. Plugin panelinde **Sessizlik Esigi** (default -40 dB) ve **Min. Sessizlik** (0.4s) ayarla
 3. **Analiz Et** — Plugin sessiz/nefes bolgelerini tespit eder
 4. Sonuclari incele (waveform onizleme, istatistikler)
-5. **Uygula** — orijinal sequence korunur, "Adiniz - AutoCut" isimli yeni sequence olusturulur
+5. **Kes ve Birlestir** — aktif sequence'de yerinde kesim yapar. Klipler 0'dan basliyarak yan yana dizilir. **Cmd+Z** ile tek adimda geri alinabilir.
 
 ### AUTO-SRT
 
@@ -132,18 +132,25 @@ Window > UXP Plugins > PremiereCut > PremiereCut
 
 ## Ayarlar
 
-Plugin tum ayarlari localStorage'da saklar. Varsayilanlar:
+Plugin tum ayarlari localStorage'da saklar. "Sifirla" butonu default degerlere donduruyor. Slider'lar (sessizlik, min. sessizlik, padding) **tiklayip direkt deger yazilabilir** (UXP native range drag kisitli oldugu icin custom div-based slider kullaniliyor).
 
 | Ayar | Varsayilan | Aralik |
 |------|-----------|--------|
-| Sessizlik esigi | -35 dB | -50 ile -20 |
-| Min. sessizlik | 0.4s | 0.2-2.0s |
-| Padding | 150ms | 0-500ms |
+| Sessizlik esigi | -40 dB | -90 ile 0 |
+| Min. sessizlik | 0.4s | 0.1-5.0s |
+| Padding | 150ms | 0-2000ms |
+| Min. konusma | 0.3s | 0.1-1.0s |
 | Satir / altyazi | 2 | 1-3 |
 | Kelime / satir | 6 | 2-12 |
-| Karakter / satir | 42 | 20-60 |
 | Max altyazi suresi | 5s | 2-10s |
+| Min altyazi suresi | 1s | 0.5-3s |
 | CPS limiti | 20 | 10-30 |
+
+### Konsept
+
+- **Sessizlik esigi -40 dB**: −40 dB'den **daha sessiz** bolgeler kesilir. Konusma tipik olarak -30 ile -10 dB arasinda; -40 dB altindaki bolgeler muhtemelen sessizlik veya oda gurultusu.
+- **Min. sessizlik 0.4s**: Sadece 0.4 saniyeden uzun sessizlikler kesilir. Kisa mikro-pauzalar (konusma ritmi) korunur.
+- **Padding 150ms**: Her kesim noktasindan 150ms buffer — konusmanin basi/sonu kesilmemesi icin. Adaptive: silence kisa ise padding oraninde azalir, her silence en az 30ms kesilir.
 
 ## Sorun Giderme
 
@@ -230,13 +237,27 @@ premiere-cut/
 ## Bilinen Sinirlamalar
 
 - **Tek kamera, tek konusmaci** icin optimize edilmistir
-- Multi-track setup'larda sequence'deki ilk audio/video klibin kaynak
-  dosyasini kullanir — trim/split'leri tam yansitmaz
-- UXP'de klip `split/razor` API'si yok — kesim icin `createSetEndAction`
-  + `createSetStartAction` + `createRemoveItemsAction(ripple=true)`
-  kombinasyonu kullanilir
-- `large-v3` modeli ~3 GB. Daha kucuk modeller (`medium`, `small`,
-  `base`) daha hizli ama daha dusuk kaliteli
+- Multi-track setup'lar destekleniyor; audio yoksa video track'lerden ses cekilir (build-sequence-audio endpoint FFmpeg mixdown)
+- UXP'de klip `split/razor` API'si yok — kesim icin `createInsertProjectItemAction` + `ClipProjectItem.createSetInOutPointsAction` + `createRemoveItemsAction(ripple=true)` kombinasyonu kullanilir (Adobe sample pattern)
+- UXP'de `<input type="range">` mouse drag bozuk — custom div-based slider (pointerdown + mousemove fallback) kullaniliyor
+- `large-v3` modeli ~3 GB. Daha kucuk modeller (`medium`, `small`, `base`) daha hizli ama daha dusuk kaliteli
+- Programatik sequence duplicate UXP'de yok — kesim aktif sequence uzerinde yerinde yapilir, Cmd+Z ile restore edilir
+
+## Degisiklik Gunlugu
+
+### v1.0.1 (2026-04-20)
+
+- **Auto-Cut yan yana dizim fix**: Codex'in onerdigi `ClipProjectItem.createSetInOutPointsAction` + `dst` cursor pattern'i ile keep segmentleri timeline 0'dan itibaren bitisik diziliyor
+- **Track index dinamik**: Kullanicinin orijinal medyasinin bulundugu track'e insert (V2/A2 yerine V1/A1 problemi cozuldu)
+- **Adaptive padding**: Her silence region en az 30ms kesilir (padding silence'i tamamen yutmasin)
+- **Custom div-based slider**: UXP range drag bug bypass, click-to-edit, keyboard arrows
+- **Sifirla butonu**: Tespit Ayarlari bolumunde — localStorage'i temizleyip default'lara doner
+- **Genis aralik**: Sessizlik -90..0 dB, Padding 0..2000ms, Min. Sessizlik 0.1..5.0s
+- **Aciklayici hata mesajlari**: "Tutulacak bolge yok", "Silinecek sessizlik bulunamadi" vb.
+
+### v1.0.0
+
+- Ilk release — Auto-Cut + Auto-SRT temel akislari
 
 ## Gelecek Ozellikler
 

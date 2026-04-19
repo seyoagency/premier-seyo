@@ -19,7 +19,7 @@ async function getTrackItems(sequence) {
   for (let i = 0; i < videoTrackCount; i++) {
     const track = await sequence.getVideoTrack(i);
     if (track) {
-      const items = await track.getTrackItems(0, 0);
+      const items = await track.getTrackItems(1, false);
       if (items) {
         for (const item of items) {
           const startTime = await item.getStartTime();
@@ -27,8 +27,8 @@ async function getTrackItems(sequence) {
           videoItems.push({
             item,
             trackIndex: i,
-            start: timeUtils.ticksToSeconds(startTime.ticks),
-            end: timeUtils.ticksToSeconds(endTime.ticks),
+            start: startTime.seconds,
+            end: endTime.seconds,
           });
         }
       }
@@ -40,7 +40,7 @@ async function getTrackItems(sequence) {
   for (let i = 0; i < audioTrackCount; i++) {
     const track = await sequence.getAudioTrack(i);
     if (track) {
-      const items = await track.getTrackItems(0, 0);
+      const items = await track.getTrackItems(1, false);
       if (items) {
         for (const item of items) {
           const startTime = await item.getStartTime();
@@ -48,8 +48,8 @@ async function getTrackItems(sequence) {
           audioItems.push({
             item,
             trackIndex: i,
-            start: timeUtils.ticksToSeconds(startTime.ticks),
-            end: timeUtils.ticksToSeconds(endTime.ticks),
+            start: startTime.seconds,
+            end: endTime.seconds,
           });
         }
       }
@@ -66,7 +66,7 @@ async function getTrackItems(sequence) {
  */
 async function getSequenceDuration(sequence) {
   const endTime = await sequence.getEndTime();
-  return timeUtils.ticksToSeconds(endTime.ticks);
+  return endTime.seconds;
 }
 
 /**
@@ -75,7 +75,7 @@ async function getSequenceDuration(sequence) {
  * @returns {Promise<string>}
  */
 async function getSequenceName(sequence) {
-  return await sequence.getName();
+  return sequence.name;
 }
 
 module.exports = {

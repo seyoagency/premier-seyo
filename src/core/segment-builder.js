@@ -39,11 +39,26 @@ function build(totalDuration, silenceRegions, breathRegions = [], {
   // Cakisan bolgeleri birlestir (merge overlapping)
   removeRanges = mergeOverlapping(removeRanges);
 
-  // Padding uygula — remove bolgelerini daralt, keep bolgelerini genislet
-  removeRanges = removeRanges.map(r => ({
-    start: Math.min(r.start + paddingAfter, r.end),
-    end: Math.max(r.end - paddingBefore, r.start),
-  })).filter(r => r.end > r.start);
+  // Padding uygula: silence bolgelerine padding uygulanirken silence'in
+  // HIC kaybolmayacagi sekilde proportional azalt. Min 30ms silence orta
+  // kesim olarak HER ZAMAN kalir (silencedetect zaten min_duration ile gercek
+  // silence buldugu icin burada kesim yapmayi red etmek yerine en azindan
+  // minimum degeri koru).
+  const minKeepCut = 0.03; // her silence en az 30ms kesilsin
+  removeRanges = removeRanges.map(r => {
+    const dur = r.end - r.start;
+    if (dur <= minKeepCut) return { start: r.start, end: r.end };
+    const totalPadReq = paddingBefore + paddingAfter;
+    // Padding icin kullanilabilir alan: duration - minKeepCut
+    const padAvailable = Math.max(0, dur - minKeepCut);
+    const padRatio = totalPadReq > 0 ? Math.min(1, padAvailable / totalPadReq) : 0;
+    const padA = paddingAfter * padRatio;
+    const padB = paddingBefore * padRatio;
+    return {
+      start: r.start + padA,
+      end: r.end - padB,
+    };
+  }).filter(r => r && r.end > r.start);
 
   // Keep bolgelerini hesapla (remove'un tersi)
   const keepRanges = [];

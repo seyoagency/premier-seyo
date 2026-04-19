@@ -1,36 +1,19 @@
 /**
- * Word-level timestamp'lerden altyazi gruplari olustur
- * Profesyonel SRT uretimi icin akilli gruplama
- */
-
-/**
- * @typedef {Object} Caption
- * @property {number} index — altyazi numarasi (1-based)
- * @property {number} start — baslangic saniye
- * @property {number} end — bitis saniye
- * @property {string[]} lines — altyazi satirlari
- * @property {string} text — tum metin (birlesmis)
- */
-
-/**
- * Kelime listesinden altyazi gruplari olustur
+ * Word-level timestamp'lerden altyazi gruplari olustur.
  *
- * @param {import('../core/transcriber').Word[]} words — kelime listesi
- * @param {object} options
- * @param {number} [options.maxLinesPerSub=2]
- * @param {number} [options.maxWordsPerLine=6]
- * @param {number} [options.maxCharsPerLine=42]
- * @param {number} [options.maxSubDuration=5] — saniye
- * @param {number} [options.minSubDuration=1] — saniye
- * @param {number} [options.cpsLimit=20] — karakter/saniye
- * @param {boolean} [options.splitOnSentence=true]
- * @param {boolean} [options.splitOnPause=true]
- * @returns {Caption[]}
+ * Basit algoritma (maxWordsPerLine + maxLinesPerSub tabanli):
+ * - Kelimeleri sirayla satira ekle
+ * - maxWordsPerLine dolunca yeni satira gec
+ * - maxLinesPerSub dolunca yeni altyaziya gec
+ * - Cumle sonunda (. ? !) altyaziyi hemen bitir
+ * - Uzun duraklamalarda (> 0.5s) altyaziyi bitir
+ * - Max/min sure ve CPS (karakter/saniye) kontrolleri uygula
  */
+
 function group(words, {
   maxLinesPerSub = 2,
   maxWordsPerLine = 6,
-  maxCharsPerLine = 42,
+  maxCharsPerLine = 999,   // devre disi: kelime sayisi tek kontrol
   maxSubDuration = 5,
   minSubDuration = 1,
   cpsLimit = 20,
@@ -41,135 +24,113 @@ function group(words, {
 
   const captions = [];
   let currentLines = [];
-  let currentLine = "";
-  let currentLineWordCount = 0;
-  let captionStart = words[0].start;
-  let captionWordStart = words[0].start;
-  let lastWordEnd = words[0].end;
+  let currentLineWords = [];
+  let captionStart = null;
+
+  const flush = (endTime) => {
+    // Son satiri kapat
+    if (currentLineWords.length > 0) {
+      currentLines.push(currentLineWords.join(" "));
+      currentLineWords = [];
+    }
+    if (currentLines.length === 0) return;
+    if (captionStart === null) return;
+
+    captions.push({
+      index: captions.length + 1,
+      start: captionStart,
+      end: endTime,
+      lines: [...currentLines],
+      text: currentLines.join("\n"),
+    });
+    currentLines = [];
+    captionStart = null;
+  };
 
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
-    const wordText = word.text.trim();
+    const wordText = (word.text || "").trim();
     if (!wordText) continue;
 
-    const nextWord = words[i + 1];
-    const gap = nextWord ? nextWord.start - word.end : 0;
+    if (captionStart === null) captionStart = word.start;
 
-    // Kelimeyi mevcut satira eklemeyi dene
-    const testLine = currentLine ? currentLine + " " + wordText : wordText;
-    const testLineWordCount = currentLineWordCount + 1;
+    currentLineWords.push(wordText);
 
-    // Yeni satir gerekli mi?
-    let needNewLine = false;
-    if (testLine.length > maxCharsPerLine) needNewLine = true;
-    if (testLineWordCount > maxWordsPerLine) needNewLine = true;
+    // Satir kelime limiti dolu mu?
+    const lineFull = currentLineWords.length >= maxWordsPerLine;
+    // Ayrica karakter limiti (eger 999 degilse)
+    const lineJoined = currentLineWords.join(" ");
+    const charFull = lineJoined.length >= maxCharsPerLine;
 
-    // Yeni altyazi gerekli mi?
-    let needNewCaption = false;
-    const captionDuration = word.end - captionStart;
+    if (lineFull || charFull) {
+      currentLines.push(lineJoined);
+      currentLineWords = [];
 
-    if (captionDuration > maxSubDuration) needNewCaption = true;
-    if (needNewLine && currentLines.length >= maxLinesPerSub) needNewCaption = true;
-
-    // Cumle sonu kontrolu
-    const isSentenceEnd = splitOnSentence && /[.!?]$/.test(wordText);
-
-    // Dogal durakla kontrolu (500ms+)
-    const isPause = splitOnPause && gap > 0.5;
-
-    if (needNewCaption && currentLine) {
-      // Mevcut altyaziyi kapat
-      currentLines.push(currentLine);
-      captions.push(makeCaption(captions.length + 1, captionStart, lastWordEnd, currentLines));
-      currentLines = [];
-      currentLine = wordText;
-      currentLineWordCount = 1;
-      captionStart = word.start;
-
-    } else if (needNewLine && currentLine) {
-      // Yeni satir
-      currentLines.push(currentLine);
-
+      // Altyazi satir limiti dolu mu?
       if (currentLines.length >= maxLinesPerSub) {
-        // Altyaziyi kapat, yeni basla
-        captions.push(makeCaption(captions.length + 1, captionStart, lastWordEnd, currentLines));
-        currentLines = [];
-        currentLine = wordText;
-        currentLineWordCount = 1;
-        captionStart = word.start;
-      } else {
-        currentLine = wordText;
-        currentLineWordCount = 1;
+        flush(word.end);
+        continue;
       }
-
-    } else {
-      // Kelimeyi mevcut satira ekle
-      currentLine = testLine;
-      currentLineWordCount = testLineWordCount;
     }
 
-    lastWordEnd = word.end;
+    // Sure kontrolu
+    const duration = word.end - captionStart;
+    if (duration >= maxSubDuration) {
+      flush(word.end);
+      continue;
+    }
 
-    // Cumle sonu veya dogal duraklada altyaziyi kapat
-    if ((isSentenceEnd || isPause) && currentLine) {
-      currentLines.push(currentLine);
-      const duration = lastWordEnd - captionStart;
+    // Cumle sonu
+    if (splitOnSentence && /[.!?]$/.test(wordText)) {
+      flush(word.end);
+      continue;
+    }
 
-      // Cok kisa altyazilari bir sonrakiyle birlestirme, ama minimum sure kontrolu yap
-      if (duration >= minSubDuration || i === words.length - 1) {
-        captions.push(makeCaption(captions.length + 1, captionStart, lastWordEnd, currentLines));
-        currentLines = [];
-        currentLine = "";
-        currentLineWordCount = 0;
-        captionStart = nextWord ? nextWord.start : lastWordEnd;
+    // Dogal durak
+    if (splitOnPause && i + 1 < words.length) {
+      const gap = words[i + 1].start - word.end;
+      if (gap > 0.5) {
+        flush(word.end);
+        continue;
       }
     }
   }
 
-  // Kalan kelimeleri isle
-  if (currentLine) {
-    currentLines.push(currentLine);
-  }
-  if (currentLines.length > 0) {
-    captions.push(makeCaption(captions.length + 1, captionStart, lastWordEnd, currentLines));
-  }
+  // Kalan kelimeleri son altyaziya kapat
+  const last = words[words.length - 1];
+  if (last) flush(last.end);
 
-  // CPS kontrolu — cok hizli altyazilari uzat
-  return applyCPSLimit(captions, cpsLimit);
+  return applyCPSLimit(captions, cpsLimit, minSubDuration);
 }
 
-/**
- * Caption nesnesi olustur
- */
-function makeCaption(index, start, end, lines) {
-  return {
-    index,
-    start,
-    end,
-    lines: [...lines],
-    text: lines.join("\n"),
-  };
-}
+function applyCPSLimit(captions, cpsLimit, minDur) {
+  return captions.map((cap, index) => {
+    const charCount = cap.text.replace(/\n/g, " ").length;
+    const start = Number(cap.start || 0);
+    const end = Math.max(Number(cap.end || start), start + 0.001);
+    const dur = end - start;
+    let newEnd = end;
 
-/**
- * CPS (karakter/saniye) limitini uygula
- * Cok hizli gecen altyazilarin suresini uzat
- */
-function applyCPSLimit(captions, cpsLimit) {
-  return captions.map(cap => {
-    const charCount = cap.text.replace(/\n/g, "").length;
-    const duration = cap.end - cap.start;
-    const cps = charCount / duration;
-
-    if (cps > cpsLimit && duration > 0) {
-      // Minimum sure = karakter sayisi / cps limiti
-      const minDuration = charCount / cpsLimit;
-      return {
-        ...cap,
-        end: cap.start + minDuration,
-      };
+    // CPS asilirsa uzat
+    if (cpsLimit > 0 && dur > 0) {
+      const cps = charCount / dur;
+      if (cps > cpsLimit) {
+        const needDur = charCount / cpsLimit;
+        newEnd = start + needDur;
+      }
     }
-    return cap;
+    // Min sure
+    if (minDur > 0 && (newEnd - start) < minDur) {
+      newEnd = start + minDur;
+    }
+
+    // Sonraki altyaziya tasmasin. SRT/VTT overlap bazi player'larda bozuluyor.
+    const next = captions[index + 1];
+    if (next && Number.isFinite(next.start)) {
+      newEnd = Math.min(newEnd, Math.max(start + 0.001, next.start - 0.001));
+    }
+
+    return { ...cap, index: index + 1, start, end: Math.max(start + 0.001, newEnd) };
   });
 }
 

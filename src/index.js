@@ -94,7 +94,6 @@ function setupSliders() {
     { id: "minSilenceDuration", suffix: "s" },
     { id: "padding", suffix: "ms" },
     { id: "minKeepDuration", suffix: "s" },
-    { id: "maxCharsPerLine", suffix: "" },
     { id: "maxSubDuration", suffix: "s" },
     { id: "minSubDuration", suffix: "s" },
     { id: "cpsLimit", suffix: "" },
@@ -103,12 +102,170 @@ function setupSliders() {
   sliders.forEach(({ id, suffix }) => {
     const slider = document.getElementById(id);
     const valueEl = document.getElementById(`${id}-val`);
-    if (slider && valueEl) {
-      slider.addEventListener("input", () => {
-        valueEl.textContent = slider.value + suffix;
-        saveCurrentSettings();
-      });
+    if (!slider || !valueEl) return;
+
+    // Div-based custom slider (UXP <input type=range> mouse drag bug bypass)
+    initCustomSlider(slider);
+
+    const step = parseFloat(slider.dataset.step) || 1;
+    const decimals = (String(step).split(".")[1] || "").length;
+    const formatValue = (raw) => {
+      const num = parseFloat(raw);
+      if (isNaN(num)) return raw;
+      return decimals > 0 ? num.toFixed(decimals) : String(Math.round(num));
+    };
+
+    const applyChange = () => {
+      valueEl.textContent = formatValue(slider.dataset.value) + suffix;
+      saveCurrentSettings();
+    };
+
+    slider.addEventListener("input", applyChange);
+    slider.addEventListener("change", applyChange);
+
+    // Value span'ine tiklayarak number input ile direkt deger girme imkani verelim.
+    makeValueEditable(slider, valueEl, suffix, applyChange);
+
+    // Ilk degeri render et
+    applyChange();
+  });
+}
+
+function initCustomSlider(track) {
+  const fill = track.querySelector(".cslider-fill");
+  const thumb = track.querySelector(".cslider-thumb");
+  const min = Number(track.dataset.min || 0);
+  const max = Number(track.dataset.max || 100);
+  const step = Number(track.dataset.step || 1);
+  const decimals = (String(step).split(".")[1] || "").length;
+
+  const clamp = (v) => Math.min(max, Math.max(min, v));
+  const snap = (v) => Math.round(v / step) * step;
+  const fmt = (v) => decimals > 0 ? Number(v).toFixed(decimals) : String(Math.round(v));
+
+  function setValue(value, emit = true) {
+    const next = clamp(snap(value));
+    const percent = ((next - min) / (max - min)) * 100;
+    track.dataset.value = fmt(next);
+    track.style.setProperty("--percent", `${percent}%`);
+    track.setAttribute("aria-valuemin", String(min));
+    track.setAttribute("aria-valuemax", String(max));
+    track.setAttribute("aria-valuenow", track.dataset.value);
+    if (emit) {
+      track.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
     }
+  }
+
+  function valueFromClientX(clientX) {
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return min + ratio * (max - min);
+  }
+
+  let dragging = false;
+
+  const onDown = (e) => {
+    dragging = true;
+    try { track.setPointerCapture && track.setPointerCapture(e.pointerId); } catch {}
+    setValue(valueFromClientX(e.clientX));
+    e.preventDefault();
+  };
+  const onMove = (e) => {
+    if (!dragging) return;
+    setValue(valueFromClientX(e.clientX));
+  };
+  const onUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try { track.releasePointerCapture && track.releasePointerCapture(e.pointerId); } catch {}
+    track.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+  };
+
+  track.addEventListener("pointerdown", onDown);
+  track.addEventListener("pointermove", onMove);
+  track.addEventListener("pointerup", onUp);
+  track.addEventListener("pointercancel", onUp);
+
+  // Fallback: mouse events (UXP'de pointer event yoksa)
+  track.addEventListener("mousedown", (e) => {
+    dragging = true;
+    setValue(valueFromClientX(e.clientX));
+    e.preventDefault();
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    setValue(valueFromClientX(e.clientX));
+  });
+  document.addEventListener("mouseup", () => {
+    dragging = false;
+  });
+
+  track.addEventListener("keydown", (e) => {
+    const cur = Number(track.dataset.value || min);
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      setValue(cur - step);
+    } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setValue(cur + step);
+    }
+  });
+
+  // Ilk degeri init et
+  setValue(Number(track.dataset.value || min), false);
+}
+
+function makeValueEditable(slider, valueEl, suffix, onChange) {
+  valueEl.style.cursor = "text";
+  valueEl.style.textDecoration = "underline dotted";
+  valueEl.style.textUnderlineOffset = "3px";
+  valueEl.title = "Degeri degistirmek icin tiklayip yazin";
+  valueEl.addEventListener("click", () => {
+    const getAttr = (attr) => slider.dataset ? slider.dataset[attr] : slider[attr];
+    const min = parseFloat(getAttr("min"));
+    const max = parseFloat(getAttr("max"));
+    const step = parseFloat(getAttr("step")) || 1;
+    const current = slider.dataset.value || slider.value;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = current;
+    input.style.cssText = "flex:0 0 50px;width:50px;background:#1a1a1a;color:#fff;border:1px solid #3a3a3a;border-radius:3px;font-size:11px;text-align:right;padding:2px 4px;";
+    valueEl.style.display = "none";
+    valueEl.parentElement.insertBefore(input, valueEl);
+    input.focus();
+    input.select();
+
+    const commit = () => {
+      let v = parseFloat(input.value);
+      if (isNaN(v)) v = parseFloat(current);
+      v = Math.max(min, Math.min(max, v));
+      const decimals = (String(step).split(".")[1] || "").length;
+      const valStr = decimals > 0 ? v.toFixed(decimals) : String(Math.round(v));
+      if (slider.dataset && slider.dataset.min !== undefined) {
+        slider.dataset.value = valStr;
+        const percent = ((v - min) / (max - min)) * 100;
+        slider.style.setProperty("--percent", `${percent}%`);
+      } else {
+        slider.value = valStr;
+      }
+      input.remove();
+      valueEl.style.display = "";
+      onChange();
+    };
+
+    const cancel = () => {
+      input.remove();
+      valueEl.style.display = "";
+    };
+
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") commit();
+      else if (e.key === "Escape") cancel();
+    });
   });
 }
 
@@ -154,6 +311,14 @@ function setupButtons() {
   document.getElementById("btn-apply-cut").addEventListener("click", handleApplyCut);
   document.getElementById("btn-transcribe").addEventListener("click", handleTranscribe);
   document.getElementById("btn-save-srt").addEventListener("click", handleSaveSRT);
+  const resetBtn = document.getElementById("resetSettings");
+  if (resetBtn) resetBtn.addEventListener("click", handleResetSettings);
+}
+
+function handleResetSettings() {
+  config.reset();
+  restoreSettings();
+  setStatus("Ayarlar varsayilana donduruldu", "success");
 }
 
 // ——— Dependency Check ———
@@ -164,7 +329,7 @@ async function checkDependencies() {
     updateDepBadge("whisper", res.whisper);
     updateDepBadge("model", res.models && res.models.length > 0);
 
-    if (!res.ffmpeg || !res.whisper || !res.models.length) {
+    if (!res.ffmpeg || !res.whisper || !(res.models && res.models.length)) {
       const dc = document.getElementById("dep-check-cut");
       if (dc) dc.style.display = "block";
     }
@@ -224,7 +389,13 @@ async function handleAnalyze() {
 
     updateProgress("cut", 100, "Tamamlandi");
     displayCutResults(analysisResult);
-    setStatus(`Analiz tamam: ${analysisResult.remove.length} sessiz bolge`, "success");
+    const applyBtn = document.getElementById("btn-apply-cut");
+    if (applyBtn) applyBtn.disabled = !analysisResult.keep || analysisResult.keep.length === 0;
+    if (!analysisResult.keep || analysisResult.keep.length === 0) {
+      setStatus("Tutulacak bolge yok — esigi dusur (-40 dB gibi) ve 'Sifirla' deneyin", "error");
+    } else {
+      setStatus(`Analiz tamam: ${analysisResult.remove.length} sessiz, ${analysisResult.keep.length} tutulacak bolge`, "success");
+    }
 
   } catch (err) {
     console.error("Analiz hatasi:", err);
@@ -237,28 +408,37 @@ async function handleAnalyze() {
 
 // ——— AUTO-CUT: Apply ———
 async function handleApplyCut() {
-  if (!analysisResult || !analysisResult.remove.length) {
+  if (!analysisResult) {
     setStatus("Once analiz yapin", "error");
+    return;
+  }
+  if (!analysisResult.keep || !analysisResult.keep.length) {
+    setStatus("Tutulacak bolge yok — ayarlar cok agresif", "error");
+    return;
+  }
+  if (!analysisResult.remove || !analysisResult.remove.length) {
+    setStatus("Silinecek sessizlik bulunamadi — esigi yukselt veya min. sessizligi dusur", "error");
     return;
   }
 
   const btn = document.getElementById("btn-apply-cut");
   btn.disabled = true;
-  showProgress("cut", true, "Sequence kopyalaniyor...");
+  showProgress("cut", true, "Kesim basliyor (Cmd+Z ile geri alinabilir)...");
 
   try {
-    updateProgress("cut", 10, "Sequence kopyalaniyor...");
-    const newSequence = await duplicator.duplicateActiveSequence(" - AutoCut");
+    updateProgress("cut", 10, "Sequence aliniyor...");
+    const seq = await duplicator.duplicateActiveSequence(" - AutoCut");
 
-    updateProgress("cut", 20, "Sessiz bolgeler kesiliyor...");
+    updateProgress("cut", 20, "Kesim uygulaniyor...");
     const result = await reconstructor.reconstruct(
-      newSequence,
+      seq,
       analysisResult.remove,
-      (pct) => updateProgress("cut", 20 + Math.round(pct * 0.8), `Kesiliyor... %${pct}`)
+      (pct) => updateProgress("cut", 20 + Math.round(pct * 0.8), `%${pct}`),
+      analysisResult.keep
     );
 
     updateProgress("cut", 100, "Tamamlandi");
-    setStatus(`AutoCut: ${result.message}`, "success");
+    setStatus(`AutoCut: ${result.message}`, result.success ? "success" : "error");
   } catch (err) {
     console.error("Cut hatasi:", err);
     setStatus(`Hata: ${err.message}`, "error");
@@ -277,11 +457,12 @@ async function handleTranscribe() {
 
   try {
     updateProgress("srt", 10, "Ses cikariliyor...");
-    const audioPath = currentAudioPath || await audioExporter.exportAudio({
+    const audioPath = await audioExporter.exportAudio({
       sampleRate: 16000,
       mono: true,
       suffix: "-srt",
     });
+    currentAudioPath = audioPath;
 
     updateProgress("srt", 20, "Whisper calisiyor (1-5 dakika surebilir)...");
     const language = document.getElementById("srt-language").value;
@@ -339,11 +520,11 @@ async function handleSaveSRT() {
     const ppro = require("premierepro");
     const project = await ppro.Project.getActiveProject();
     const sequence = await project.getActiveSequence();
-    const seqName = await sequence.getName();
+    const seqName = sequence.name || "sequence";
     const safeName = String(seqName).replace(/[^a-zA-Z0-9_-]/g, "_");
 
     // macOS user Documents dizinine kaydet
-    const outputDir = "/Users/" + getUserName() + "/Documents/PremiereCut";
+    const outputDir = "/Users/" + getUserName() + "/Documents/PremierSEYO";
     const savedFiles = [];
 
     if (document.getElementById("output-srt").checked) {
@@ -359,8 +540,21 @@ async function handleSaveSRT() {
     }
 
     if (savedFiles.length > 0) {
-      await daemon.reveal(savedFiles[0]);
-      setStatus(`Kaydedildi: ${savedFiles.length} dosya`, "success");
+      // SRT'yi otomatik olarak proje bin'e import et
+      try {
+        const srtFile = savedFiles.find(f => f.endsWith(".srt"));
+        if (srtFile) {
+          const rootItem = await project.getRootItem();
+          await project.importFiles([srtFile], true, rootItem, false);
+          setStatus(`Kaydedildi ve proje paneline eklendi (${savedFiles.length} dosya)`, "success");
+        } else {
+          setStatus(`Kaydedildi: ${savedFiles.length} dosya`, "success");
+        }
+      } catch (importErr) {
+        console.warn("SRT import hatasi:", importErr);
+        await daemon.reveal(savedFiles[0]);
+        setStatus(`Kaydedildi (import manuel): ${savedFiles.length} dosya`, "success");
+      }
     } else {
       setStatus("Cikti formati secin", "error");
     }
@@ -471,18 +665,29 @@ function escapeHtml(str) {
 
 // ——— Settings ———
 
+function readSliderValue(id) {
+  const el = document.getElementById(id);
+  if (!el) return NaN;
+  // cslider: data-value; native range: value
+  return parseFloat(el.dataset && el.dataset.value !== undefined ? el.dataset.value : el.value);
+}
+
 function getCurrentSettings() {
+  const paddingMs = readSliderValue("padding");
+  const paddingSeconds = (isNaN(paddingMs) ? 150 : paddingMs) / 1000;
   return {
-    silenceThreshold: parseInt(document.getElementById("silenceThreshold").value),
-    minSilenceDuration: parseFloat(document.getElementById("minSilenceDuration").value),
+    silenceThreshold: parseInt(readSliderValue("silenceThreshold")),
+    minSilenceDuration: readSliderValue("minSilenceDuration"),
+    paddingBefore: paddingSeconds,
+    paddingAfter: paddingSeconds,
     detectBreaths: document.getElementById("detectBreaths").checked,
-    minKeepDuration: parseFloat(document.getElementById("minKeepDuration").value),
+    minKeepDuration: readSliderValue("minKeepDuration"),
     maxLinesPerSub: parseInt(document.getElementById("maxLinesPerSub-val").textContent),
     maxWordsPerLine: parseInt(document.getElementById("maxWordsPerLine-val").textContent),
-    maxCharsPerLine: parseInt(document.getElementById("maxCharsPerLine").value),
-    maxSubDuration: parseFloat(document.getElementById("maxSubDuration").value),
-    minSubDuration: parseFloat(document.getElementById("minSubDuration").value),
-    cpsLimit: parseInt(document.getElementById("cpsLimit").value),
+    maxCharsPerLine: 999, // devre disi
+    maxSubDuration: readSliderValue("maxSubDuration"),
+    minSubDuration: readSliderValue("minSubDuration"),
+    cpsLimit: parseInt(readSliderValue("cpsLimit")),
     splitOnSentence: document.getElementById("splitOnSentence").checked,
     splitOnPause: document.getElementById("splitOnPause").checked,
   };
@@ -498,7 +703,6 @@ function restoreSettings() {
   setSlider("minSilenceDuration", s.minSilenceDuration, "s");
   setSlider("padding", Math.round((s.paddingBefore || 0.15) * 1000), "ms");
   setSlider("minKeepDuration", s.minKeepDuration, "s");
-  setSlider("maxCharsPerLine", s.maxCharsPerLine, "");
   setSlider("maxSubDuration", s.maxSubDuration, "s");
   setSlider("minSubDuration", s.minSubDuration, "s");
   setSlider("cpsLimit", s.cpsLimit, "");
@@ -512,8 +716,31 @@ function restoreSettings() {
 function setSlider(id, value, suffix) {
   const slider = document.getElementById(id);
   const valEl = document.getElementById(`${id}-val`);
-  if (slider) slider.value = value;
-  if (valEl) valEl.textContent = value + suffix;
+  if (slider) {
+    const num = parseFloat(value);
+    if (slider.dataset && slider.dataset.min !== undefined) {
+      // cslider: data-value + CSS custom property
+      const min = parseFloat(slider.dataset.min);
+      const max = parseFloat(slider.dataset.max);
+      const step = parseFloat(slider.dataset.step) || 1;
+      const decimals = (String(step).split(".")[1] || "").length;
+      const clamped = Math.max(min, Math.min(max, num));
+      slider.dataset.value = decimals > 0 ? clamped.toFixed(decimals) : String(Math.round(clamped));
+      const percent = ((clamped - min) / (max - min)) * 100;
+      slider.style.setProperty("--percent", `${percent}%`);
+    } else {
+      slider.value = value;
+    }
+  }
+  if (valEl) {
+    const step = slider ? parseFloat(
+      (slider.dataset && slider.dataset.step) || slider.step
+    ) || 1 : 1;
+    const decimals = (String(step).split(".")[1] || "").length;
+    const num = parseFloat(value);
+    const display = decimals > 0 ? num.toFixed(decimals) : String(Math.round(num));
+    valEl.textContent = display + suffix;
+  }
 }
 
 function setStepperVal(id, value) {
@@ -531,9 +758,9 @@ const { entrypoints } = require("uxp");
 
 entrypoints.setup({
   panels: {
-    "premierecut-panel": {
-      show() { console.log("PremiereCut panel acildi"); },
-      hide() { console.log("PremiereCut panel kapandi"); },
+    "premierseyo-panel": {
+      show() { console.log("PremierSEYO panel acildi"); },
+      hide() { console.log("PremierSEYO panel kapandi"); },
     },
   },
 });

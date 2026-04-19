@@ -6,7 +6,7 @@
 const STORAGE_KEY = "premierecut-settings-v1";
 
 const DEFAULTS = {
-  silenceThreshold: -35,
+  silenceThreshold: -40,
   minSilenceDuration: 0.4,
   paddingBefore: 0.15,
   paddingAfter: 0.15,

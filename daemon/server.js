@@ -72,6 +72,20 @@ function parseBody(req) {
   });
 }
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function safeToken(value, fallback) {
+  const token = String(value || "");
+  return /^[a-zA-Z0-9_.-]+$/.test(token) ? token : fallback;
+}
+
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 // ——— Handler'lar ———
 
 async function handlePing(req, res) {
@@ -106,9 +120,10 @@ async function handleExportAudio(req, res) {
 
     const name = path.basename(inputPath, path.extname(inputPath));
     const outputPath = path.join(TMP_DIR, `${name}${suffix}.wav`);
+    const safeSampleRate = Math.max(8000, Math.min(192000, parseInt(sampleRate) || 48000));
     const monoFlag = mono ? "-ac 1" : "";
 
-    const cmd = `ffmpeg -y -i "${inputPath}" -vn -acodec pcm_s16le -ar ${sampleRate} ${monoFlag} "${outputPath}"`;
+    const cmd = `ffmpeg -y -i ${shellQuote(inputPath)} -vn -acodec pcm_s16le -ar ${safeSampleRate} ${monoFlag} ${shellQuote(outputPath)}`;
     const result = await runCmd(cmd, 300000);
 
     if (!result.ok) {
@@ -128,7 +143,10 @@ async function handleSilenceDetect(req, res) {
       return sendJson(res, 400, { ok: false, error: "audioPath gecersiz" });
     }
 
-    const cmd = `ffmpeg -i "${audioPath}" -af silencedetect=noise=${noiseThreshold}dB:d=${minDuration} -f null - 2>&1`;
+    const threshold = finiteNumber(noiseThreshold, -35);
+    const minSilence = finiteNumber(minDuration, 0.4);
+    const filter = `silencedetect=noise=${threshold}dB:d=${minSilence}`;
+    const cmd = `ffmpeg -i ${shellQuote(audioPath)} -af ${shellQuote(filter)} -f null - 2>&1`;
     const result = await runCmd(cmd, 300000);
 
     const output = result.stdout + "\n" + result.stderr;
@@ -148,14 +166,17 @@ async function handleTranscribe(req, res) {
       return sendJson(res, 400, { ok: false, error: "audioPath gecersiz" });
     }
 
-    const modelPath = path.join(os.homedir(), `.local/share/whisper/ggml-${model}.bin`);
+    const safeModel = safeToken(model, "large-v3");
+    const safeLanguage = language === "auto" ? "auto" : safeToken(language, "auto");
+    const modelPath = path.join(os.homedir(), `.local/share/whisper/ggml-${safeModel}.bin`);
     if (!fs.existsSync(modelPath)) {
       return sendJson(res, 400, { ok: false, error: `Model bulunamadi: ${modelPath}` });
     }
 
     // 16kHz mono WAV'a cevir (whisper icin ideal)
-    const whisperInput = path.join(TMP_DIR, "whisper-input.wav");
-    const convertCmd = `ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 -acodec pcm_s16le "${whisperInput}"`;
+    const jobId = `whisper-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const whisperInput = path.join(TMP_DIR, `${jobId}.wav`);
+    const convertCmd = `ffmpeg -y -i ${shellQuote(audioPath)} -ar 16000 -ac 1 -acodec pcm_s16le ${shellQuote(whisperInput)}`;
     const conv = await runCmd(convertCmd, 120000);
     if (!conv.ok) {
       return sendJson(res, 500, { ok: false, error: "Audio format donusumu basarisiz", stderr: conv.stderr });
@@ -163,9 +184,9 @@ async function handleTranscribe(req, res) {
 
     // whisper-cli calistir
     // -oj: JSON cikti  -ojf: full JSON (word timestamps dahil)  -ml 1: her kelime ayri segment
-    const langFlag = language === "auto" ? "" : `-l ${language}`;
-    const outputJson = path.join(TMP_DIR, "whisper-output");
-    const cmd = `whisper-cli -m "${modelPath}" ${langFlag} -f "${whisperInput}" -oj -ojf -of "${outputJson}" -ml 1 --split-on-word 2>&1`;
+    const langFlag = safeLanguage === "auto" ? "" : `-l ${safeLanguage}`;
+    const outputJson = path.join(TMP_DIR, jobId);
+    const cmd = `whisper-cli -m ${shellQuote(modelPath)} ${langFlag} -f ${shellQuote(whisperInput)} -oj -ojf -of ${shellQuote(outputJson)} -ml 1 --split-on-word 2>&1`;
 
     const result = await runCmd(cmd, 1800000); // 30 dakika
     if (!result.ok) {
@@ -203,7 +224,10 @@ async function handleWriteFile(req, res) {
     ];
 
     const resolved = path.resolve(filePath);
-    const isSafe = safeRoots.some((root) => resolved.startsWith(path.resolve(root)));
+    const isSafe = safeRoots.some((root) => {
+      const safeRoot = path.resolve(root);
+      return resolved === safeRoot || resolved.startsWith(safeRoot + path.sep);
+    });
     if (!isSafe) {
       return sendJson(res, 403, { ok: false, error: `Bu konuma yazmaya izin yok: ${resolved}` });
     }
@@ -217,13 +241,102 @@ async function handleWriteFile(req, res) {
   }
 }
 
+async function handleBuildSequenceAudio(req, res) {
+  try {
+    const { clips, outputPath: outP, sampleRate = 48000, mono = false } = await parseBody(req);
+    if (!Array.isArray(clips) || clips.length === 0) {
+      return sendJson(res, 400, { ok: false, error: "clips listesi bos" });
+    }
+
+    const outputPath = outP || path.join(TMP_DIR, `sequence-mixdown-${Date.now()}.wav`);
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+    const safeSampleRate = Math.max(8000, Math.min(192000, parseInt(sampleRate) || 48000));
+    const monoFlag = mono ? "-ac 1" : "-ac 2";
+
+    const sorted = [...clips]
+      .filter((clip) => clip && clip.path && fs.existsSync(clip.path))
+      .sort((a, b) => finiteNumber(a.timelineStart) - finiteNumber(b.timelineStart));
+
+    console.log("BUILD-SEQ-AUDIO request:", JSON.stringify({ clipCount: sorted.length, outputPath }));
+
+    const prepared = [];
+    const tmpSeg = path.join(TMP_DIR, `mix-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    fs.mkdirSync(tmpSeg, { recursive: true });
+
+    for (let i = 0; i < sorted.length; i++) {
+      const clip = sorted[i];
+      const sourceIn = Math.max(0, finiteNumber(clip.sourceIn));
+      const sourceOut = finiteNumber(clip.sourceOut);
+      const fallbackDuration = sourceOut > sourceIn ? sourceOut - sourceIn : 0;
+      const duration = Math.max(0, finiteNumber(clip.duration, fallbackDuration));
+      if (duration <= 0.001) continue;
+
+      const clipPath = path.join(tmpSeg, `clip-${i}.wav`);
+      const clipCmd = [
+        "ffmpeg -y",
+        "-ss", sourceIn.toFixed(3),
+        "-t", duration.toFixed(3),
+        "-i", shellQuote(clip.path),
+        "-vn -acodec pcm_s16le",
+        "-ar", safeSampleRate,
+        monoFlag,
+        shellQuote(clipPath),
+      ].join(" ");
+      const c = await runCmd(clipCmd, 120000);
+      if (!c.ok) {
+        console.error(`clip ${i} trim hatasi:`, c.stderr.slice(-500));
+        continue;
+      }
+      prepared.push({
+        path: clipPath,
+        delayMs: Math.max(0, Math.round(finiteNumber(clip.timelineStart) * 1000)),
+      });
+    }
+
+    if (prepared.length === 0) {
+      return sendJson(res, 500, { ok: false, error: "Hicbir clip segment'i olusturulamadi" });
+    }
+
+    const inputArgs = prepared.map((item) => `-i ${shellQuote(item.path)}`).join(" ");
+    const filters = prepared.map((item, index) => `[${index}:a]adelay=${item.delayMs}:all=1[a${index}]`);
+    const filter = prepared.length === 1
+      ? `${filters[0]};[a0]anull[aout]`
+      : `${filters.join(";")};${prepared.map((_, index) => `[a${index}]`).join("")}amix=inputs=${prepared.length}:duration=longest:normalize=0[aout]`;
+    const cmd = [
+      "ffmpeg -y",
+      inputArgs,
+      "-filter_complex", shellQuote(filter),
+      "-map", shellQuote("[aout]"),
+      "-acodec pcm_s16le",
+      "-ar", safeSampleRate,
+      monoFlag,
+      shellQuote(outputPath),
+    ].join(" ");
+
+    console.log("BUILD-SEQ-AUDIO cmd:", cmd.substring(0, 500));
+
+    const result = await runCmd(cmd, 600000);
+    if (!result.ok) {
+      console.error("BUILD-SEQ-AUDIO FFmpeg stderr:", result.stderr);
+      return sendJson(res, 500, { ok: false, error: "FFmpeg mixdown: " + (result.stderr.split("\n").filter(l => l.includes("Error") || l.includes("error")).slice(-3).join(" | ") || "unknown").substring(0, 200), stderr: result.stderr.substring(0, 3000) });
+    }
+
+    try { fs.rmSync(tmpSeg, { recursive: true, force: true }); } catch {}
+    console.log("BUILD-SEQ-AUDIO success:", outputPath);
+    sendJson(res, 200, { ok: true, outputPath, clipCount: sorted.length });
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: err.message });
+  }
+}
+
 async function handleReveal(req, res) {
   try {
     const { filePath } = await parseBody(req);
     if (!filePath) {
       return sendJson(res, 400, { ok: false, error: "filePath gerekli" });
     }
-    await runCmd(`open -R "${filePath}"`, 5000);
+    await runCmd(`open -R ${shellQuote(filePath)}`, 5000);
     sendJson(res, 200, { ok: true });
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err.message });
@@ -273,6 +386,7 @@ const routes = {
   "POST /transcribe": handleTranscribe,
   "POST /write-file": handleWriteFile,
   "POST /reveal": handleReveal,
+  "POST /build-sequence-audio": handleBuildSequenceAudio,
 };
 
 const server = http.createServer(async (req, res) => {

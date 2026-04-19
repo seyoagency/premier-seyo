@@ -1,35 +1,19 @@
 /**
- * Sequence duplicate islemleri
- * Orijinal sequence'e dokunmadan guvenli bir kopya olusturur
- */
-
-/**
- * Active sequence'i duplicate et
- * @param {string} [suffix=" - AutoCut"] — yeni sequence'in adi eki
- * @returns {Promise<object>} — yeni sequence nesnesi
+ * Aktif sequence'i dondurur. "Duplicate" adi iddiali — UXP Premiere Pro API'si
+ * programatik sequence duplicate fonksiyonu sunmuyor (createSequence veya
+ * cloneSequence yok). Bu yuzden reconstructor orijinal sequence uzerinde
+ * yerinde kesim yapar; tum action'lar tek transaction icinde calistigi icin
+ * Cmd+Z ile tek adimda geri alinabilir.
+ *
+ * @param {string} suffix — reserved, UXP clone API destekledigi zaman kullanilacak
  */
 async function duplicateActiveSequence(suffix = " - AutoCut") {
   const ppro = require("premierepro");
-
   const project = await ppro.Project.getActiveProject();
-  if (!project) throw new Error("Aktif proje bulunamadi");
-
+  if (!project) throw new Error("Aktif proje yok");
   const sequence = await project.getActiveSequence();
-  if (!sequence) throw new Error("Aktif sequence bulunamadi");
-
-  const seqName = await sequence.getName();
-  const newName = seqName + suffix;
-
-  // Sequence'i clone et
-  const newSequence = await sequence.clone(newName);
-  if (!newSequence) {
-    throw new Error("Sequence kopyalanamadi");
-  }
-
-  // Yeni sequence'i aktif yap
-  await project.openSequence(newSequence);
-
-  return newSequence;
+  if (!sequence) throw new Error("Aktif sequence yok");
+  return sequence;
 }
 
 module.exports = { duplicateActiveSequence };
