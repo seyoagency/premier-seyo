@@ -230,7 +230,9 @@ body > * { position: relative; z-index: 2; }
   color: var(--accent);
   background: var(--surface-3);
 }
-.icon-btn svg { width: 14px; height: 14px; }
+.icon-btn svg { width: 14px; height: 14px; stroke: var(--ink-300); fill: none; }
+.icon-btn svg circle, .icon-btn svg path, .icon-btn svg line { stroke: inherit; }
+.icon-btn:hover svg { stroke: var(--accent); }
 
 /* ---------- Tabs ---------- */
 .tabs {
@@ -844,7 +846,9 @@ body.no-key .tab-content { display: none; }
   transition: color 0.16s var(--ease-out);
 }
 .field-toggle:hover { color: var(--accent); }
-.field-toggle svg { width: 14px; height: 14px; }
+.field-toggle svg { width: 14px; height: 14px; stroke: var(--ink-300); fill: none; }
+.field-toggle svg circle, .field-toggle svg path { stroke: inherit; }
+.field-toggle:hover svg { stroke: var(--accent); }
 
 .field-hint {
   font-size: 10.5px;
@@ -918,7 +922,9 @@ body.no-key .tab-content { display: none; }
   transition: all 0.16s var(--ease-out);
 }
 .drawer-close:hover { color: var(--danger); border-color: var(--danger); }
-.drawer-close svg { width: 14px; height: 14px; }
+.drawer-close svg { width: 14px; height: 14px; stroke: var(--ink-300); fill: none; }
+.drawer-close svg path, .drawer-close svg line { stroke: inherit; }
+.drawer-close:hover svg { stroke: var(--danger); }
 
 .drawer-body {
   flex: 1;
@@ -1305,7 +1311,8 @@ body.no-key .tab-content { display: none; }
   align-items: center;
   justify-content: center;
 }
-.modal-icon svg { width: 24px; height: 24px; color: var(--warning); }
+.modal-icon svg { width: 24px; height: 24px; stroke: var(--warning); fill: none; }
+.modal-icon svg path, .modal-icon svg line { stroke: inherit; }
 
 .modal-title {
   font-family: var(--font-display);
