@@ -25,6 +25,7 @@
 
 const seqEditor = require("./sequence-editor");
 const mapper = require("./timeline-mapper");
+const effectsPreserver = require("./effects-preserver");
 
 async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, onStage) {
   const ppro = require("premierepro");
@@ -80,6 +81,41 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
   // Artik her zaman parca-bazli (pieces) mode calisir: orijinaller silinir,
   // her keep parcasi kaynak ClipProjectItem'in in/out point'leri ile yeniden
   // insert edilir. FFmpeg render adimi yok, project'e yeni dosya import edilmez.
+
+  // ——— Phase 0: Effects snapshot ———
+  // Orijinal trackitem'lar silinmeden ÖNCE her clipsMeta entry'si için video
+  // ve audio component-chain snapshot'ı al. Phase 2 insert sonrası her
+  // pieceyle eşleşen snapshot yeni TrackItem'a uygulanır.
+  // Hata toleransı: snapshot başarısızsa kesim akışı bozulmaz.
+  const effectsByMetaIndex = new Map();
+  try {
+    for (let j = 0; j < clipsMeta.length; j++) {
+      const meta = clipsMeta[j];
+      if (!meta) continue;
+      const matchVideo = videoItems.find((vi) => (
+        Number(vi.trackIndex) === Number(meta.trackIndex) &&
+        Math.abs(vi.start - (meta.timelineStart || 0)) < 0.05
+      ));
+      const matchAudio = audioItems.find((ai) => (
+        Math.abs(ai.start - (meta.timelineStart || 0)) < 0.05
+      ));
+      const entry = {};
+      if (matchVideo) {
+        const snap = await effectsPreserver.snapshotChain(matchVideo.item, mediaTypeVideo);
+        if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.video = snap;
+      }
+      if (matchAudio) {
+        const snap = await effectsPreserver.snapshotChain(matchAudio.item, mediaTypeAudio);
+        if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.audio = snap;
+      }
+      if (entry.video || entry.audio) effectsByMetaIndex.set(j, entry);
+    }
+    if (effectsByMetaIndex.size > 0) {
+      stageLog(`Effects snapshot: ${effectsByMetaIndex.size} klip için kayıt alındı`);
+    }
+  } catch (e) {
+    console.warn("[reconstructor] effects snapshot loop fail:", e.message);
+  }
 
   try {
     // ——— Phase 1: Orijinal klipleri sil (video + audio ayri) ———
@@ -203,6 +239,60 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
 
       await new Promise((r) => setTimeout(r, 180));
       ({ project, sequence, editor } = await refreshSequenceContext(ppro, sequence));
+
+      // ——— Effects apply: insert edilen yeni TrackItem'ları bul ve snapshot uygula ———
+      // Phase 0'da kaydedilen orijinal effects (Motion + filter + keyframes) bu
+      // segmente ait piece'a göre source-time map ile yeniden uygulanır.
+      try {
+        const metaIdx = piece.originalIndex;
+        const entry = (metaIdx != null) ? effectsByMetaIndex.get(metaIdx) : null;
+        if (entry && (entry.video || entry.audio)) {
+          const afterInsert = await seqEditor.getTrackItems(sequence);
+          // En yeni track item'ı = belirli track içinde max start (insert ripple
+          // sonrası genelde sequence sonunda olur)
+          const newVideoItem = afterInsert.videoItems
+            .filter((vi) => vi.trackIndex === videoTrackIdx)
+            .sort((a, b) => b.start - a.start)[0];
+          const newAudioItem = afterInsert.audioItems
+            .filter((ai) => ai.trackIndex === audioTrackIdx)
+            .sort((a, b) => b.start - a.start)[0];
+
+          if (entry.video && newVideoItem) {
+            const ctx = {
+              mediaType: mediaTypeVideo,
+              newSourceIn: piece.sourceIn,
+              newSourceOut: piece.sourceOut,
+              newTimelineStart: newVideoItem.start,
+            };
+            const effActions = await effectsPreserver.buildApplyActions(ppro, newVideoItem.item, entry.video, ctx);
+            if (effActions.length > 0) {
+              try {
+                runActionTransaction(project, `PremierSEYO: Apply effects ${segmentNumber} V`, () => effActions);
+              } catch (e) {
+                console.warn(`[effects] video apply ${segmentNumber} fail:`, e.message);
+              }
+            }
+          }
+          if (entry.audio && newAudioItem) {
+            const ctx = {
+              mediaType: mediaTypeAudio,
+              newSourceIn: piece.sourceIn,
+              newSourceOut: piece.sourceOut,
+              newTimelineStart: newAudioItem.start,
+            };
+            const effActions = await effectsPreserver.buildApplyActions(ppro, newAudioItem.item, entry.audio, ctx);
+            if (effActions.length > 0) {
+              try {
+                runActionTransaction(project, `PremierSEYO: Apply effects ${segmentNumber} A`, () => effActions);
+              } catch (e) {
+                console.warn(`[effects] audio apply ${segmentNumber} fail:`, e.message);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[effects] apply phase fail:", e.message);
+      }
 
       successCount++;
       if (onProgress) {

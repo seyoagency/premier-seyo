@@ -168,6 +168,10 @@ function splitKeepSegmentByCanonicalClips(keep, canonicalClips) {
       sourceOut: srcOut,
       timelineStart: overlapStart,
       duration: overlapEnd - overlapStart,
+      // effects-preserver eşleşmesi için orijinal clip kaynağı:
+      originalIndex: typeof clip.originalIndex === "number" ? clip.originalIndex : null,
+      originalTrackIndex: typeof clip.trackIndex === "number" ? clip.trackIndex : null,
+      originalTimelineStart: typeof clip.timelineStart === "number" ? clip.timelineStart : null,
     });
   }
 

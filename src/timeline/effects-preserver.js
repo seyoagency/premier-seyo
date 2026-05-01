@@ -1,0 +1,282 @@
+/**
+ * Auto-Cut "in-place keep-only reconstruction" sırasında orijinal TrackItem
+ * silinmeden önce Motion + diğer component param'larını snapshot al, yeni
+ * insert edilen TrackItem'a yeniden uygula.
+ *
+ * UXP `premierepro` API'si (25.0+):
+ *   - TrackItem.getComponentChain(MediaType)
+ *   - VideoComponentChain.getComponentCount() / getComponentAtIndex(i)
+ *   - Component.getMatchName() / getDisplayName() / getParamCount() / getParam(i)
+ *   - ComponentParam.areKeyframesSupported() / isTimeVarying() / getValue()
+ *   - ComponentParam.getKeyframeListAsTickTimes() / getValueAtTime(TickTime)
+ *   - ComponentParam.createSetValueAction(value) / createKeyframe(value)
+ *   - ComponentParam.createSetTimeVaryingAction(bool) / createAddKeyframeAction(kf)
+ *   - VideoFilterFactory.createComponent(matchName)
+ *   - VideoComponentChain.createAppendComponentAction(component)
+ *
+ * Source-time mapping:
+ *   keyframe.position TickTime'ı timeline cinsinden. Snapshot alırken
+ *   sourceSeconds = kf_position - originalStart + originalInPoint dönüşümü
+ *   ile source-time'a çevirilir; apply tarafında yeni TrackItem'ın
+ *   newTimelineStart + (sourceSeconds - newSourceIn) ile timeline'a geri map.
+ *
+ * Hata toleransı: Snapshot/apply'da exception → warn + skip; kesim akışı
+ * bozulmamalı. Phase 0 silmeden önce çağrılır, Phase 2 insert sonrası uygulanır.
+ */
+
+async function snapshotChain(trackItem, mediaType) {
+  try {
+    const chain = await trackItem.getComponentChain(mediaType);
+    if (!chain) return { components: [] };
+    const count = await safeCall(chain.getComponentCount, chain);
+    if (!Number.isFinite(count) || count <= 0) return { components: [] };
+
+    const startTime = await safeCall(trackItem.getStartTime, trackItem);
+    const inPoint = await safeCall(trackItem.getInPoint, trackItem);
+    const tiStart = (startTime && typeof startTime.seconds === "number") ? startTime.seconds : 0;
+    const tiInPoint = (inPoint && typeof inPoint.seconds === "number") ? inPoint.seconds : 0;
+
+    const components = [];
+    for (let i = 0; i < count; i++) {
+      try {
+        const comp = await chain.getComponentAtIndex(i);
+        if (!comp) continue;
+        const matchName = await safeCall(comp.getMatchName, comp);
+        const displayName = await safeCall(comp.getDisplayName, comp);
+        // Time-remapping skip: keyframe topology farklı, scope dışı
+        if (/time.*remap/i.test(String(matchName) + String(displayName))) {
+          components.push({ matchName, displayName, params: [], skipped: "time-remap" });
+          continue;
+        }
+
+        const paramCount = await safeCall(comp.getParamCount, comp);
+        const params = [];
+        const safeParamCount = Number.isFinite(paramCount) ? paramCount : 0;
+
+        for (let p = 0; p < safeParamCount; p++) {
+          let param;
+          try { param = await comp.getParam(p); } catch { continue; }
+          if (!param) continue;
+
+          let supportsKf = false, isTV = false;
+          try { supportsKf = await param.areKeyframesSupported(); } catch {}
+          try { isTV = await param.isTimeVarying(); } catch {}
+
+          let staticValue = null;
+          try { staticValue = await param.getValue(); } catch {}
+
+          const keyframes = [];
+          if (supportsKf && isTV) {
+            try {
+              const kfTimes = await param.getKeyframeListAsTickTimes();
+              if (Array.isArray(kfTimes)) {
+                for (const kt of kfTimes) {
+                  if (!kt || typeof kt.seconds !== "number") continue;
+                  let value = null;
+                  try { value = await param.getValueAtTime(kt); } catch { continue; }
+                  keyframes.push({
+                    sourceSeconds: kt.seconds - tiStart + tiInPoint,
+                    value,
+                  });
+                }
+              }
+            } catch (e) {
+              console.warn("[effects/snapshot] keyframe read fail:", e.message);
+            }
+          }
+
+          // Sadece anlamlı kayıt: ya keyframes ya isTimeVarying false ile static.
+          // Boş/null staticValue + boş keyframes → atla (UXP unset param)
+          if (keyframes.length === 0 && staticValue == null) continue;
+
+          params.push({
+            paramIndex: p,
+            isTimeVarying: !!isTV && keyframes.length > 0,
+            staticValue,
+            keyframes,
+          });
+        }
+
+        components.push({ matchName, displayName, params });
+      } catch (e) {
+        console.warn("[effects/snapshot] component read fail:", i, e.message);
+      }
+    }
+    return { components };
+  } catch (e) {
+    console.warn("[effects/snapshot] chain fail:", e.message);
+    return { components: [] };
+  }
+}
+
+function hasMeaningfulSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.components)) return false;
+  return snapshot.components.some((c) => Array.isArray(c.params) && c.params.length > 0);
+}
+
+async function buildApplyActions(ppro, trackItem, snapshot, ctx) {
+  const actions = [];
+  if (!hasMeaningfulSnapshot(snapshot)) return actions;
+  if (!trackItem || !ctx) return actions;
+
+  const { mediaType, newSourceIn, newSourceOut, newTimelineStart } = ctx;
+  let chain;
+  try {
+    chain = await trackItem.getComponentChain(mediaType);
+  } catch (e) {
+    console.warn("[effects/apply] getComponentChain fail:", e.message);
+    return actions;
+  }
+  if (!chain) return actions;
+
+  // Mevcut chain'deki component'leri matchName -> Component map'le
+  const compsByMatch = new Map();
+  try {
+    const newCount = await safeCall(chain.getComponentCount, chain);
+    if (Number.isFinite(newCount)) {
+      for (let i = 0; i < newCount; i++) {
+        try {
+          const c = await chain.getComponentAtIndex(i);
+          if (!c) continue;
+          const mn = await safeCall(c.getMatchName, c);
+          if (mn) compsByMatch.set(String(mn), c);
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn("[effects/apply] enumerate chain fail:", e.message);
+  }
+
+  for (const compSnap of snapshot.components) {
+    if (compSnap.skipped) continue; // time-remap vs.
+    if (!Array.isArray(compSnap.params) || compSnap.params.length === 0) continue;
+
+    let targetComp = compsByMatch.get(String(compSnap.matchName));
+
+    if (!targetComp) {
+      // Custom video filter: factory ile oluştur + chain'e append.
+      // Audio filter factory UXP'de yok varsayım — audio custom filter skip.
+      try {
+        const factory = ppro && ppro.VideoFilterFactory;
+        if (factory && typeof factory.createComponent === "function" && isVideoMediaType(ppro, mediaType)) {
+          const newComp = await factory.createComponent(compSnap.matchName);
+          if (newComp) {
+            const appendAction = await safeCall(chain.createAppendComponentAction, chain, newComp);
+            if (appendAction) actions.push(appendAction);
+            targetComp = newComp;
+          }
+        }
+      } catch (e) {
+        console.warn("[effects/apply] custom filter create fail:", compSnap.matchName, e.message);
+      }
+    }
+
+    if (!targetComp) continue;
+
+    for (const paramSnap of compSnap.params) {
+      try {
+        const param = await targetComp.getParam(paramSnap.paramIndex);
+        if (!param) continue;
+        const paramActions = await buildParamActions(ppro, param, paramSnap, {
+          newSourceIn,
+          newSourceOut,
+          newTimelineStart,
+        });
+        for (const a of paramActions) if (a) actions.push(a);
+      } catch (e) {
+        console.warn("[effects/apply] param fail:", compSnap.matchName, paramSnap.paramIndex, e.message);
+      }
+    }
+  }
+
+  return actions;
+}
+
+async function buildParamActions(ppro, param, paramSnap, range) {
+  const actions = [];
+  const { newSourceIn, newSourceOut, newTimelineStart } = range;
+
+  if (paramSnap.keyframes && paramSnap.keyframes.length > 0) {
+    // Range filtresi: yalnızca yeni segmentin source aralığına düşen kf'ler
+    const filtered = [];
+    for (const kf of paramSnap.keyframes) {
+      if (typeof kf.sourceSeconds !== "number") continue;
+      if (kf.sourceSeconds + 1e-6 >= newSourceIn && kf.sourceSeconds - 1e-6 <= newSourceOut) {
+        filtered.push(kf);
+      }
+    }
+
+    if (filtered.length > 0) {
+      // Time-varying'i aç
+      try {
+        const tvAction = await safeCall(param.createSetTimeVaryingAction, param, true);
+        if (tvAction) actions.push(tvAction);
+      } catch (e) {
+        console.warn("[effects/apply] setTimeVarying fail:", e.message);
+      }
+
+      for (const kf of filtered) {
+        try {
+          const kfObj = await param.createKeyframe(kf.value);
+          if (!kfObj) continue;
+          const timelineSec = newTimelineStart + (kf.sourceSeconds - newSourceIn);
+          // position field setter — UXP Keyframe property
+          try {
+            kfObj.position = ppro.TickTime.createWithSeconds(timelineSec);
+          } catch (e) {
+            console.warn("[effects/apply] kf.position set fail:", e.message);
+            continue;
+          }
+          const addAction = await param.createAddKeyframeAction(kfObj);
+          if (addAction) actions.push(addAction);
+        } catch (e) {
+          console.warn("[effects/apply] kf add fail:", e.message);
+        }
+      }
+    } else if (paramSnap.staticValue != null) {
+      // Range dışında kaldı → staticValue ile sabitle (clamp)
+      try {
+        const a = await safeCall(param.createSetValueAction, param, paramSnap.staticValue);
+        if (a) actions.push(a);
+      } catch (e) {
+        console.warn("[effects/apply] setValue (clamp) fail:", e.message);
+      }
+    }
+  } else if (paramSnap.staticValue != null) {
+    try {
+      const a = await safeCall(param.createSetValueAction, param, paramSnap.staticValue);
+      if (a) actions.push(a);
+    } catch (e) {
+      console.warn("[effects/apply] setValue fail:", e.message);
+    }
+  }
+
+  return actions;
+}
+
+function isVideoMediaType(ppro, mediaType) {
+  try {
+    const consts = (ppro && (ppro.Constants || ppro.constants)) || {};
+    const mt = consts.MediaType || {};
+    if (mediaType === mt.VIDEO || mediaType === mt.Video || mediaType === mt.video) return true;
+    return mediaType === 0;
+  } catch {
+    return mediaType === 0;
+  }
+}
+
+async function safeCall(fn, ctx, ...args) {
+  if (typeof fn !== "function") return null;
+  try {
+    const r = fn.apply(ctx, args);
+    return r && typeof r.then === "function" ? await r : r;
+  } catch (e) {
+    return null;
+  }
+}
+
+module.exports = {
+  snapshotChain,
+  buildApplyActions,
+  hasMeaningfulSnapshot,
+};

@@ -125,6 +125,9 @@ function setupSliders() {
     const applyChange = () => {
       valueEl.textContent = formatValue(slider.dataset.value) + suffix;
       saveCurrentSettings();
+      // SRT slider'ları (maxSubDuration, minSubDuration, cpsLimit, subtitleOffset)
+      // değiştiğinde transcriptResult varsa preview'ı debounced regroup et.
+      if (SRT_SLIDER_IDS.has(id)) debouncedRerenderCaptions();
     };
 
     slider.addEventListener("input", applyChange);
@@ -294,6 +297,8 @@ function setupSteppers() {
       val = Math.max(conf.min, Math.min(conf.max, val));
       valEl.textContent = val;
       saveCurrentSettings();
+      // Stepper SRT'ye özel (maxLinesPerSub, maxWordsPerLine) — anında yeniden grupla.
+      rerenderCaptions();
     });
   });
 }
@@ -310,7 +315,11 @@ function setupPersistedInputs() {
   persistedIds.forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener("change", saveCurrentSettings);
+    el.addEventListener("change", () => {
+      saveCurrentSettings();
+      // Sadece SRT-relevant checkbox'lar (splitOnSentence, splitOnPause) regroup tetikler.
+      if (SRT_PERSISTED_IDS.has(id)) rerenderCaptions();
+    });
   });
 }
 
@@ -547,6 +556,9 @@ async function handleTranscribe() {
     let segments = await transcriber.transcribe(audioPath, { language });
 
     segments = sanitizeTranscriptSegments(segments);
+    // rawSegments: sanitize sonrası, offset/strip öncesi referans —
+    // stepper/slider değişiminde Deepgram'a tekrar gitmeden regroup için saklanır.
+    const rawSegments = segments;
 
     // Auto-offset hesapla: Whisper'in ilk word.start'i ile gercek konusma
     // baslangici arasindaki fark. Sonra kullanici slider degeri eklenir
@@ -610,7 +622,13 @@ async function handleTranscribe() {
     const settings = getCurrentSettings();
     const captions = captionGrouper.group(allWords, settings);
 
-    transcriptResult = { segments, captions };
+    transcriptResult = {
+      rawSegments,
+      autoOffsetSec,
+      silenceRegions,
+      segments,
+      captions,
+    };
     updateProgress("srt", 100, "Tamamlandi");
     displaySRTPreview(captions);
     setStatus(`Transkript: ${captions.length} altyazi`, "success");
@@ -623,6 +641,76 @@ async function handleTranscribe() {
     setTimeout(() => showProgress("srt", false), 1500);
   }
 }
+
+// ——— SRT live regroup pipeline ———
+// Stepper/slider/checkbox değişiminde Deepgram'a tekrar gitmeden, rawSegments
+// üzerinden offset + strip + group pipeline'ını yeniden çalıştırır.
+
+function flattenWordsFromSegments(segments) {
+  const allWords = [];
+  for (const seg of (segments || [])) {
+    if (seg.words && seg.words.length > 0) {
+      allWords.push(...seg.words);
+    } else {
+      const text = (seg.text || "").trim();
+      const words = text.split(/\s+/).filter(Boolean);
+      if (words.length === 0) continue;
+      const wd = (seg.end - seg.start) / words.length;
+      words.forEach((w, i) => allWords.push({
+        text: w,
+        start: seg.start + i * wd,
+        end: seg.start + (i + 1) * wd,
+      }));
+    }
+  }
+  return allWords;
+}
+
+function applyTranscriptPipeline(rawSegments, autoOffsetSec, settings, silenceRegions) {
+  let segs = rawSegments || [];
+  if (autoOffsetSec) segs = applyOffsetToSegments(segs, autoOffsetSec);
+  if (Array.isArray(silenceRegions) && silenceRegions.length > 0) {
+    segs = stripSilenceOnlyWords(segs, silenceRegions);
+  }
+  const manualOffsetSec = (settings.subtitleOffsetMs || 0) / 1000;
+  if (manualOffsetSec) segs = applyOffsetToSegments(segs, manualOffsetSec);
+  return segs;
+}
+
+function rerenderCaptions() {
+  if (!transcriptResult || !Array.isArray(transcriptResult.rawSegments)) return;
+  const settings = getCurrentSettings();
+  const segments = applyTranscriptPipeline(
+    transcriptResult.rawSegments,
+    transcriptResult.autoOffsetSec || 0,
+    settings,
+    transcriptResult.silenceRegions || []
+  );
+  const allWords = flattenWordsFromSegments(segments);
+  if (allWords.length === 0) return;
+  try {
+    const captions = captionGrouper.group(allWords, settings);
+    transcriptResult.segments = segments;
+    transcriptResult.captions = captions;
+    displaySRTPreview(captions);
+    setStatus(`Yeniden gruplandi: ${captions.length} altyazi`, "success");
+  } catch (e) {
+    console.warn("[regroup]", e.message);
+    setStatus(`Gruplama hatasi: ${e.message}`, "error");
+  }
+}
+
+function debounce(fn, ms) {
+  let t = null;
+  return function (...args) {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn.apply(null, args), ms);
+  };
+}
+
+const debouncedRerenderCaptions = debounce(rerenderCaptions, 250);
+const SRT_SLIDER_IDS = new Set(["maxSubDuration", "minSubDuration", "cpsLimit", "subtitleOffset"]);
+const SRT_PERSISTED_IDS = new Set(["splitOnSentence", "splitOnPause"]);
 
 function isMeaningfulWordText(text) {
   if (!text) return false;
