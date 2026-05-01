@@ -1,5 +1,9 @@
 /**
- * whisper-cli ile konusma tanima — daemon uzerinden
+ * Konusma tanima — daemon uzerinden Deepgram Nova-3
+ *
+ * Daemon `/transcribe` endpoint'i Deepgram raw response dondurur.
+ * Bu modul Deepgram cevabini plugin'in beklediği TranscriptSegment[]
+ * formatina cevirir (eski Whisper parser'ın çıkış sözleşmesi korunur).
  */
 
 const daemon = require("../utils/daemon");
@@ -9,6 +13,7 @@ const daemon = require("../utils/daemon");
  * @property {string} text
  * @property {number} start
  * @property {number} end
+ * @property {number} [confidence]
  */
 
 /**
@@ -24,147 +29,66 @@ const daemon = require("../utils/daemon");
  * @param {object} [options]
  * @returns {Promise<TranscriptSegment[]>}
  */
-async function transcribe(audioPath, { language = "auto", model = "large-v3" } = {}) {
-  const res = await daemon.transcribe({ audioPath, language, model });
-  const parsed = res.result;
-  return parseWhisperOutput(parsed);
+async function transcribe(audioPath, { language = "tr", keyterm = null } = {}) {
+  const res = await daemon.transcribe({ audioPath, language, keyterm });
+  return parseDeepgramOutput(res.result);
 }
 
 /**
- * whisper.cpp JSON ciktisini parse et
- * Format: { transcription: [{ timestamps: {from, to}, text, offsets: {from, to} }] }
+ * Deepgram cevabini TranscriptSegment[]'e cevir.
+ * Deepgram results.utterances tek konusmaci icin yeterince granular segment verir.
  */
-function parseWhisperOutput(whisperJson) {
-  if (!whisperJson) return [];
+function parseDeepgramOutput(deepgramJson) {
+  if (!deepgramJson || !deepgramJson.results) return [];
 
-  // whisper-cli -oj -ojf bazen hem "segments" hem "transcription" donduruyor.
-  // Ikisi ayni metni temsil ettigi icin segments varsa onu tek kaynak kabul et.
-  const rawSegments = Array.isArray(whisperJson.segments) && whisperJson.segments.length > 0
-    ? whisperJson.segments
-    : (Array.isArray(whisperJson.transcription) ? whisperJson.transcription : []);
+  const utterances = Array.isArray(deepgramJson.results.utterances)
+    ? deepgramJson.results.utterances
+    : [];
 
-  const segments = [];
-
-  for (const item of rawSegments) {
-    const normalized = normalizeSegment(item);
-    if (normalized && normalized.text) segments.push(normalized);
+  if (utterances.length > 0) {
+    return utterances
+      .map((u) => normalizeUtterance(u))
+      .filter((s) => s && s.text)
+      .sort((a, b) => a.start - b.start);
   }
 
-  return segments.sort((a, b) => a.start - b.start);
+  // Utterance yoksa channel words'ten fallback (Deepgram her durumda words döner)
+  const channels = Array.isArray(deepgramJson.results.channels) ? deepgramJson.results.channels : [];
+  const alt = channels[0] && Array.isArray(channels[0].alternatives) ? channels[0].alternatives[0] : null;
+  if (!alt || !Array.isArray(alt.words) || alt.words.length === 0) return [];
+
+  const words = alt.words.map(normalizeWord).filter(Boolean);
+  if (words.length === 0) return [];
+
+  return [
+    {
+      text: words.map((w) => w.text).join(" "),
+      start: words[0].start,
+      end: words[words.length - 1].end,
+      words,
+    },
+  ];
 }
 
-function normalizeSegment(item) {
-  if (!item) return null;
+function normalizeUtterance(u) {
+  if (!u) return null;
+  const start = Number(u.start);
+  const end = Number(u.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
 
-  const timestamps = item.timestamps || {};
-  const start = firstNumber(
-    item.start,
-    timestamps.from,
-    item.offsets?.from
-  );
-  const end = firstNumber(
-    item.end,
-    timestamps.to,
-    item.offsets?.to
-  );
-
-  const words = normalizeWords(item.words || item.tokens || []);
-  const text = (item.text || words.map(w => w.text).join(" ")).trim();
-
-  const wordStart = words.length ? words[0].start : start;
-  const wordEnd = words.length ? words[words.length - 1].end : end;
-
-  return {
-    text,
-    start: Number.isFinite(start) ? start : wordStart,
-    end: Number.isFinite(end) ? end : wordEnd,
-    words,
-  };
+  const words = Array.isArray(u.words) ? u.words.map(normalizeWord).filter(Boolean) : [];
+  const text = (u.transcript || words.map((w) => w.text).join(" ")).trim();
+  return { text, start, end, words };
 }
 
-function normalizeWords(rawWords) {
-  if (!Array.isArray(rawWords)) return [];
-  return rawWords
-    .map((w) => {
-      const text = (w.text || w.word || w.token || "").trim();
-      const start = firstNumber(w.start, w.timestamps?.from, w.offsets?.from);
-      const end = firstNumber(w.end, w.timestamps?.to, w.offsets?.to);
-      if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-        return null;
-      }
-      return { text, start, end };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.start - b.start);
+function normalizeWord(w) {
+  if (!w) return null;
+  const text = (w.punctuated_word || w.word || "").trim();
+  const start = Number(w.start);
+  const end = Number(w.end);
+  if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  const confidence = Number(w.confidence);
+  return Number.isFinite(confidence) ? { text, start, end, confidence } : { text, start, end };
 }
 
-function firstNumber(...values) {
-  for (const value of values) {
-    if (value === undefined || value === null || value === "") continue;
-    const parsed = parseTimestamp(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return NaN;
-}
-
-/*
-  Eski format referansi:
-  { transcription: [{ timestamps: {from, to}, text }] }
-
-  Not: Bu blok bilincli olarak devre disi. Yukaridaki normalizeSegment hem
-  transcription hem de segments formatini tek yoldan isliyor; iki formati ust
-  uste eklemek tekrarli altyazi uretiyordu.
-*/
-function parseWhisperOutputLegacy(whisperJson) {
-  const segments = [];
-
-  if (whisperJson.transcription && Array.isArray(whisperJson.transcription)) {
-    for (const item of whisperJson.transcription) {
-      const start = parseTimestamp(item.timestamps?.from);
-      const end = parseTimestamp(item.timestamps?.to);
-
-      segments.push({
-        text: (item.text || "").trim(),
-        start,
-        end,
-        words: [], // whisper.cpp default'ta word timestamp vermez
-      });
-    }
-  }
-
-  // Yeni format destegi
-  if (whisperJson.segments && Array.isArray(whisperJson.segments)) {
-    for (const seg of whisperJson.segments) {
-      const words = (seg.words || []).map(w => ({
-        text: (w.text || w.word || "").trim(),
-        start: typeof w.start === "number" ? w.start : parseTimestamp(w.start),
-        end: typeof w.end === "number" ? w.end : parseTimestamp(w.end),
-      }));
-
-      segments.push({
-        text: (seg.text || "").trim(),
-        start: typeof seg.start === "number" ? seg.start : parseTimestamp(seg.start),
-        end: typeof seg.end === "number" ? seg.end : parseTimestamp(seg.end),
-        words,
-      });
-    }
-  }
-
-  return segments;
-}
-
-function parseTimestamp(ts) {
-  if (typeof ts === "number") return ts;
-  if (!ts) return 0;
-
-  const parts = String(ts).replace(",", ".").split(":");
-  if (parts.length === 3) {
-    return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
-  }
-  if (parts.length === 2) {
-    return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
-  }
-  return parseFloat(ts) || 0;
-}
-
-module.exports = { transcribe, parseWhisperOutput, parseTimestamp };
+module.exports = { transcribe, parseDeepgramOutput };

@@ -1,273 +1,262 @@
-# PremiereCut
+# PremierSEYO
 
-Adobe Premiere Pro 2026 icin otomatik sessizlik kesimi ve altyazi uretim eklentisi.
+> Adobe Premiere Pro 2026 için **Auto-Cut** (sessizlik kesimi) + **Auto-SRT** (altyazı üretimi) eklentisi.
+> Deepgram Nova-3 ile Türkçe ve çoklu dil desteği. macOS-only.
 
-## Ozellikler
+[![Premiere Pro](https://img.shields.io/badge/Premiere%20Pro-25.6%2B-9999FF?logo=adobepremierepro&logoColor=white)](https://www.adobe.com/products/premiere.html)
+[![Deepgram Nova-3](https://img.shields.io/badge/Deepgram-Nova--3-13EF93?logo=deepgram&logoColor=black)](https://deepgram.com)
+[![License: MIT](https://img.shields.io/badge/license-MIT-d4ff3a)](LICENSE)
 
-**AUTO-CUT**
-- FFmpeg `silencedetect` ile sessiz bolgeleri otomatik tespit eder
-- Nefes sesleri ve kisa sessizlikleri opsiyonel olarak keser
-- Aktif sequence uzerinde yerinde kesim yapar; Cmd+Z ile tek adimda geri alinabilir
-- Padding, esik degeri, minimum sure gibi profesyonel parametreler
+## Özellikler
 
-**AUTO-SRT**
-- whisper.cpp + large-v3 modeli ile offline Turkce transkripsiyon
-- Word-level timestamp'lerle profesyonel SRT ciktisi
-- Satir/kelime/karakter limitleri tamamen ayarlanabilir
-- SRT, VTT formatlari; opsiyonel Premiere caption track entegrasyonu
+- **Auto-Cut** — Konuşma dışı sessizlikleri ve nefes seslerini timeline üzerinde otomatik tespit eder, tek tuşla keser.
+- **Auto-SRT** — Word-level timestamp ile yüksek kaliteli altyazı (SRT/VTT). Otomatik dil tespiti veya manuel seçim (TR, EN, DE, FR, ES + diğerleri).
+- **Tek istek, çift sonuç** — Auto-Cut sonrası Auto-SRT yapılırsa daemon aynı Deepgram cevabını cache'ten kullanır. Maliyet ve gecikme yarılır.
+- **Sıfır data dışarı çıkışı** — API key sadece kendi makinende dosyada saklanır (`~/.config/premier-seyo/`, chmod 600).
 
-## Mimari
+---
 
-```
-Premiere Pro UXP Plugin (panel)
-      |
-      | HTTP (127.0.0.1:53117)
-      v
-PremiereCut Helper Daemon (Node.js)
-      |
-      +-- FFmpeg (silence detection, audio export)
-      +-- whisper-cli (speech-to-text)
-      +-- File system operations
-```
+## Hızlı Kurulum (Claude Code ile)
 
-UXP'nin shell kisitlamalari nedeniyle FFmpeg ve whisper'i dogrudan
-cagiramayiz. Bu yuzden arka planda hafif bir Node.js daemon calisir.
-Daemon macOS LaunchAgent olarak kaydedilir — Mac her acildiginda
-otomatik baslar.
+> Claude Code'a şu komutu söyle:
+>
+> _"Şu repoyu klonla ve Premiere Pro için kurulumu yap: https://github.com/seyoagency/premier-seyo"_
 
-## Kurulum
+Claude Code aşağıdaki adımları otomatik yapar:
 
-### 1. Bagimliliklar
+1. `git clone https://github.com/seyoagency/premier-seyo.git ~/premier-seyo`
+2. `cd ~/premier-seyo && ./daemon/install-daemon.sh`
+3. Script Deepgram API key'i sorar (script çalıştığında interaktif girersin)
+4. Plugin Premiere'in UXP dizinine kopyalanır
+5. Premiere Pro'yu **Cmd+Q** ile tam kapat → tekrar aç
+6. **Window > UXP Plugins > PremierSEYO > PremierSEYO**
+
+---
+
+## Manuel Kurulum (3 Adım)
+
+### 1. Bağımlılıklar
 
 ```bash
-# FFmpeg (audio analiz)
-brew install ffmpeg
-
-# Whisper (speech-to-text)
-brew install whisper-cpp
-
-# Node.js (daemon icin)
-brew install node
-
-# Whisper large-v3 modeli (~3 GB)
-mkdir -p ~/.local/share/whisper
-curl -L \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin \
-  -o ~/.local/share/whisper/ggml-large-v3.bin
+brew install ffmpeg node
 ```
 
-### 2. Helper Daemon
+### 2. Repo + Setup
 
 ```bash
-cd /Users/seyo/Projects/premiere-cut/daemon
-./install-daemon.sh
+git clone https://github.com/seyoagency/premier-seyo.git ~/premier-seyo
+cd ~/premier-seyo
+./daemon/install-daemon.sh
 ```
 
-Daemon LaunchAgent olarak kurulur ve her restart'ta otomatik baslar.
+Script şunları yapar:
+- Bağımlılık kontrolü (Node.js, FFmpeg)
+- Eski kurulum varsa otomatik migrate (`~/.config/premiere-cut/` → `~/.config/premier-seyo/`)
+- Deepgram API key prompt (girmek zorunda değilsin, eklentide ayarlardan da girebilirsin)
+- macOS LaunchAgent kurulumu (Mac her açılınca daemon otomatik başlar)
+- Plugin'i Premiere UXP install dizinine kopyalar (`npm run build`)
 
-Kontrol:
-```bash
-curl http://127.0.0.1:53117/check
-# Beklenen: {"ok":true,"ffmpeg":true,"whisper":true,"models":["ggml-large-v3.bin"]}
-```
+### 3. Premiere Pro
 
-Kaldirma:
-```bash
-cd daemon && ./uninstall-daemon.sh
-```
+- Premiere Pro çalışıyorsa **Cmd+Q** ile tam kapat → tekrar aç (UXP plugin cache).
+- **Window > UXP Plugins > PremierSEYO > PremierSEYO** ile paneli aç.
 
-### 3. Plugin
+---
 
-```bash
-cd /Users/seyo/Projects/premiere-cut
+## Deepgram API Key Alma (Ücretsiz · 200 USD Kredi)
 
-# .ccx olarak paketle
-STAGE=/tmp/premierecut-stage
-rm -rf "$STAGE"
-mkdir -p "$STAGE"
-cp manifest.json "$STAGE/"
-cp -R src "$STAGE/"
-cp -R icons "$STAGE/"
-cd "$STAGE"
-zip -r /tmp/premierecut.ccx . -x "*.DS_Store"
+1. [console.deepgram.com](https://console.deepgram.com) → **Sign up** (Google/GitHub ile)
+2. Sol menüden **API Keys** → **Create a New API Key**
+3. **Permission**: "Member" seç
+4. Key'i kopyala (sadece bir kez gösterilir, kayıp olursa yenisini oluştur)
+5. Kuruluma yapıştır:
+   - `install-daemon.sh` çalışırken sorduğunda yapıştır, **veya**
+   - Eklenti açıldıktan sonra header'daki ⚙ → API Key alanına yapıştır → **Kaydet ve Bağlan**
 
-# Premiere'a yukle (UPIA)
-UPIA="/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent"
-"$UPIA" --install /tmp/premierecut.ccx
-```
+Kaynak yeni bir hesap için **200 USD ücretsiz kredi** veriyor (≈ 200 saat transkripsiyon). Türkçe Nova-3 desteği Ocak 2026'da geldi.
 
-**ONEMLI**: Plugin kurulduktan sonra Premiere Pro'yu tamamen kapatip
-yeniden acin. UXP plugin'leri cache'ler — yeni versiyon ancak restart
-sonrasi yuklenir.
+---
 
-### 4. Premiere'da Panel'i Ac
+## Kullanım
 
-Premiere Pro menusu:
-```
-Window > UXP Plugins > PremiereCut > PremiereCut
-```
+### Auto-Cut
 
-## Kullanim
+1. Premiere'de sequence aç, kesmek istediğin klipleri timeline'a ekle.
+2. PremierSEYO panelinde **AUTO·CUT** sekmesi.
+3. **Sessizlik eşiği** (varsayılan -40 dB) ve **Min sessizlik** (0.4 sn) ayarla.
+4. **Analiz Et** → sessizlik bölgeleri tespit edilir, waveform'da gösterilir.
+5. **Kes ve Birleştir** → modal uyarısı çıkar:
+   > **DİKKAT:** Auto-Cut aktif sequence'i yerinde keser. Önce sequence'in kopyasını al (Project paneli → sağ tık → "Duplicate"), sonra "Kopya aldım, devam et"e bas.
+6. Kesim tamamlanır. Hata olursa Cmd+Z ile geri al (birden fazla undo gerekebilir).
 
-### AUTO-CUT
+### Auto-SRT
 
-1. Sequence'i ac, kesmek istedigin klibi timeline'a ekle
-2. Plugin panelinde **Sessizlik Esigi** (default -40 dB) ve **Min. Sessizlik** (0.4s) ayarla
-3. **Analiz Et** — Plugin sessiz/nefes bolgelerini tespit eder
-4. Sonuclari incele (waveform onizleme, istatistikler)
-5. **Kes ve Birlestir** — aktif sequence'de yerinde kesim yapar. Klipler 0'dan basliyarak yan yana dizilir. **Cmd+Z** ile tek adimda geri alinabilir.
+1. **AUTO·SRT** sekmesi.
+2. **Dil** seç (Otomatik / Türkçe / English / Deutsch / Français / Español).
+3. **Altyazı Biçimi**: satır sayısı (1-3) + satır başına kelime (2-12) ayarla.
+4. **Çıktı formatı**: SRT, VTT (her ikisi de seçilebilir).
+5. **Transkript Et** → Deepgram Nova-3 çağrılır (≈ 30 saniye).
+6. Önizleme incele → **Kaydet**.
 
-### AUTO-SRT
+Çıktılar:
+- `~/Documents/PremierSEYO/<sequence-adi>.srt` (ve `.vtt`)
+- Aynı dosya proje paneline otomatik import edilir → timeline'a sürükle, ekle.
 
-1. **AUTO-SRT** sekmesine gec
-2. Dil sec (Turkce, English, Otomatik)
-3. Model sec (large-v3 en kaliteli ama yavas, base en hizli)
-4. Altyazi bicimini ayarla:
-   - Satir/altyazi (1-3)
-   - Kelime/satir (2-12)
-   - Karakter/satir (20-60)
-5. Cikti formatini sec (SRT, VTT)
-6. **Transkript Et** — Whisper calisir (1-5 dakika video icin)
-7. Onizleme incele, **Kaydet** — `~/Documents/PremiereCut/` altina yazilir
-
-## Ayarlar
-
-Plugin tum ayarlari localStorage'da saklar. "Sifirla" butonu default degerlere donduruyor. Slider'lar (sessizlik, min. sessizlik, padding) **tiklayip direkt deger yazilabilir** (UXP native range drag kisitli oldugu icin custom div-based slider kullaniliyor).
-
-| Ayar | Varsayilan | Aralik |
-|------|-----------|--------|
-| Sessizlik esigi | -40 dB | -90 ile 0 |
-| Min. sessizlik | 0.4s | 0.1-5.0s |
-| Padding | 150ms | 0-2000ms |
-| Min. konusma | 0.3s | 0.1-1.0s |
-| Satir / altyazi | 2 | 1-3 |
-| Kelime / satir | 6 | 2-12 |
-| Max altyazi suresi | 5s | 2-10s |
-| Min altyazi suresi | 1s | 0.5-3s |
-| CPS limiti | 20 | 10-30 |
-
-### Konsept
-
-- **Sessizlik esigi -40 dB**: −40 dB'den **daha sessiz** bolgeler kesilir. Konusma tipik olarak -30 ile -10 dB arasinda; -40 dB altindaki bolgeler muhtemelen sessizlik veya oda gurultusu.
-- **Min. sessizlik 0.4s**: Sadece 0.4 saniyeden uzun sessizlikler kesilir. Kisa mikro-pauzalar (konusma ritmi) korunur.
-- **Padding 150ms**: Her kesim noktasindan 150ms buffer — konusmanin basi/sonu kesilmemesi icin. Adaptive: silence kisa ise padding oraninde azalir, her silence en az 30ms kesilir.
+---
 
 ## Sorun Giderme
 
-### Plugin "Daemon ulasilamiyor" diyor
-
-Daemon calismiyordur. Kontrol:
-```bash
-curl http://127.0.0.1:53117/ping
-launchctl list | grep premierecut
-```
-
-Manual start:
-```bash
-launchctl unload ~/Library/LaunchAgents/com.seyoweb.premierecut.daemon.plist
-launchctl load ~/Library/LaunchAgents/com.seyoweb.premierecut.daemon.plist
-```
-
-Log:
-```bash
-tail -20 ~/Library/Logs/premierecut-daemon.log
-tail -20 ~/Library/Logs/premierecut-daemon.error.log
-```
-
-### Plugin panel'de Analiz Et cevap vermiyor
-
-Bu genelde plugin cache problemidir. Premiere Pro'yu tamamen kapatip
-yeniden acin. `Cmd+Q` ile cikis yapin, sonra tekrar acin.
-
-### whisper-cli bulunamadi
+### "Daemon ulaşılamıyor"
 
 ```bash
-which whisper-cli
-# Yoksa:
-brew install whisper-cpp
+launchctl list | grep premierseyo
+launchctl unload ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist
+launchctl load   ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist
+tail -20 ~/Library/Logs/premierseyo-daemon.log
 ```
 
-### Premiere Developer Mode
-
-UXP plugin gelistirirken developer mode'u acmak faydali:
-
-Premiere Pro > Settings > Ayarlar > UXP Plugin Developer Mode
-
-## Dosya Yapisi
-
-```
-premiere-cut/
-  manifest.json           UXP plugin manifest
-  package.json
-  README.md
-  docs/
-    superpowers/specs/    Tasarim dokumani
-  icons/                  Panel ikonlari
-  src/
-    index.html            Panel UI
-    index.js              Entry point
-    ui/
-      styles.css
-    core/
-      audio-exporter.js   Premiere -> WAV (daemon)
-      silence-detector.js FFmpeg silencedetect wrapper
-      breath-detector.js  Nefes tespit algoritmasi
-      segment-builder.js  Keep/remove segment listesi
-      transcriber.js      whisper-cli wrapper
-    timeline/
-      sequence-editor.js  Premiere DOM ops
-      duplicator.js       Sequence duplicate
-      reconstructor.js    Keep-only reconstruction
-    srt/
-      caption-grouper.js  Word -> caption grouping
-      srt-writer.js       SRT dosya yazici
-      vtt-writer.js       VTT dosya yazici
-    utils/
-      shell.js            (legacy shim)
-      daemon.js           Daemon HTTP client
-      time.js             TickTime <-> seconds
-      config.js           localStorage ayarlar
-  daemon/
-    server.js             Node.js HTTP helper
-    install-daemon.sh     LaunchAgent kurulum
-    uninstall-daemon.sh   Kaldirma
-    com.seyoweb.premierecut.daemon.plist
+Veya tek komutla yeniden kur:
+```bash
+cd ~/premier-seyo && ./daemon/install-daemon.sh
 ```
 
-## Bilinen Sinirlamalar
+### Plugin yenilenmiyor (yeni versiyon yüklenmiyor)
 
-- **Tek kamera, tek konusmaci** icin optimize edilmistir
-- Multi-track setup'lar destekleniyor; audio yoksa video track'lerden ses cekilir (build-sequence-audio endpoint FFmpeg mixdown)
-- UXP'de klip `split/razor` API'si yok — kesim icin `createInsertProjectItemAction` + `ClipProjectItem.createSetInOutPointsAction` + `createRemoveItemsAction(ripple=true)` kombinasyonu kullanilir (Adobe sample pattern)
-- UXP'de `<input type="range">` mouse drag bozuk — custom div-based slider (pointerdown + mousemove fallback) kullaniliyor
-- `large-v3` modeli ~3 GB. Daha kucuk modeller (`medium`, `small`, `base`) daha hizli ama daha dusuk kaliteli
-- Programatik sequence duplicate UXP'de yok — kesim aktif sequence uzerinde yerinde yapilir, Cmd+Z ile restore edilir
+UXP plugin'leri Premiere açılışında cache'lenir. **Cmd+Q ile Premiere'i tam kapat** (Window'u kapatmak yetmez), sonra tekrar aç.
 
-## Degisiklik Gunlugu
+### Deepgram key geçersiz / "Bağlandı" yazmıyor
 
-### v1.0.1 (2026-04-20)
+1. Header sağdaki ⚙ → drawer aç.
+2. API Key alanına yeni key yapıştır.
+3. **Bağlantıyı Test Et** → "Test başarılı · henüz kaydedilmedi" görmelisin.
+4. **Kaydet ve Bağlan** → key'i diske yazar, daemon hazır.
 
-- **Auto-Cut yan yana dizim fix**: Codex'in onerdigi `ClipProjectItem.createSetInOutPointsAction` + `dst` cursor pattern'i ile keep segmentleri timeline 0'dan itibaren bitisik diziliyor
-- **Track index dinamik**: Kullanicinin orijinal medyasinin bulundugu track'e insert (V2/A2 yerine V1/A1 problemi cozuldu)
-- **Adaptive padding**: Her silence region en az 30ms kesilir (padding silence'i tamamen yutmasin)
-- **Custom div-based slider**: UXP range drag bug bypass, click-to-edit, keyboard arrows
-- **Sifirla butonu**: Tespit Ayarlari bolumunde — localStorage'i temizleyip default'lara doner
-- **Genis aralik**: Sessizlik -90..0 dB, Padding 0..2000ms, Min. Sessizlik 0.1..5.0s
-- **Aciklayici hata mesajlari**: "Tutulacak bolge yok", "Silinecek sessizlik bulunamadi" vb.
+Key'in geçerli olduğundan emin değilsen [console.deepgram.com](https://console.deepgram.com) → **Usage** sayfasından kontrol et.
 
-### v1.0.0
+### "Aylık limit doldu"
 
-- Ilk release — Auto-Cut + Auto-SRT temel akislari
+Deepgram ücretsiz hesap aylık 200 USD kredi sunuyor (~200 saat transkripsiyon). Aşıldıysa:
+- Aynı hesapla bir sonraki ayı bekle, **veya**
+- Yeni bir Deepgram hesabı aç, yeni key oluştur, drawer'da güncelle.
 
-## Gelecek Ozellikler
+### Auto-Cut hatası: "Orijinal klipler silinemedi"
 
-- Batch processing (birden fazla klip)
-- Premiere caption track'e dogrudan altyazi yazma
-- Cloud STT desteg (Deepgram, AssemblyAI, OpenAI Whisper API)
-- WebRTC/Silero VAD ile daha akilli nefes tespiti
-- Undo/redo destegi
-- Multi-speaker diarization
+UXP state refresh gecikmesi. Önce Premiere'i tam kapat → aç → tekrar dene. Olmazsa sequence'i kopyala (yeni sequence olarak), eskiyi kapat, yeni üzerinde dene.
+
+---
+
+## Geliştirme
+
+```bash
+git clone https://github.com/seyoagency/premier-seyo.git
+cd premier-seyo
+
+# Dependency yok — Node built-in modüller dışında nothing.
+# Sadece esbuild npx ile çalışır (npm install gerekmez).
+
+npm run build        # bundle + inline + UXP install dizinine deploy
+npm run bundle       # esbuild src/index.js → src/bundle.js
+npm run inline       # bundle.js + styles.css → src/index.html'e göm
+npm run deploy       # rsync → ~/Library/Application Support/Adobe/UXP/Plugins/External/...
+```
+
+### Mimari
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  UXP Panel (Premiere Pro)                                    │
+│  src/index.html (CSS + JS inline)                            │
+│  premierepro DOM API                                         │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ HTTP fetch (token auth)
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Helper Daemon (Node.js, port 53117)                         │
+│  daemon/server.js + deepgram-client.js                       │
+│  macOS LaunchAgent — RunAtLoad + KeepAlive                   │
+└──────────────────────┬─────────────────┬─────────────────────┘
+                       │                 │
+                       ▼                 ▼
+                ┌──────────┐       ┌──────────┐
+                │ Deepgram │       │  FFmpeg  │
+                │  Nova-3  │       │  (mix)   │
+                └──────────┘       └──────────┘
+```
+
+UXP `child_process` yasakladığı için tüm shell işleri (FFmpeg + Deepgram REST) bu daemon üzerinden yapılır. Daemon dependency-free — sadece Node built-in modüller.
+
+### Dosya Yapısı
+
+```
+premier-seyo/
+├── manifest.json              UXP plugin manifest
+├── package.json
+├── README.md
+├── daemon/
+│   ├── server.js              HTTP endpoints (53117)
+│   ├── deepgram-client.js     Deepgram REST + cache
+│   ├── install-daemon.sh      Migration aware setup
+│   ├── uninstall-daemon.sh    --purge mode
+│   └── com.seyoweb.premierseyo.daemon.plist
+├── src/
+│   ├── index.html             Panel UI (build çıktısında inline)
+│   ├── index.js               Entry point
+│   ├── ui/styles.css
+│   ├── core/                  audio export, silence/breath detect, segment build
+│   ├── timeline/              sequence editor, reconstructor, mapper
+│   ├── srt/                   caption grouper, SRT/VTT writer
+│   └── utils/                 daemon HTTP client, time, config
+├── icons/                     Panel ikonları
+└── scripts/
+    ├── inline-assets.js       bundle + CSS → HTML inline
+    └── deploy-plugin.js       rsync → UXP install dizini
+```
+
+---
+
+## Kaldırma
+
+```bash
+cd ~/premier-seyo
+
+# Sadece daemon stop:
+./daemon/uninstall-daemon.sh
+
+# Tam temizlik (config + key + log + plugin install dizini):
+./daemon/uninstall-daemon.sh --purge
+```
+
+`--purge` modu hem `premier-seyo` hem eski `premiere-cut` artefactlarını temizler.
+
+---
+
+## Bilinen Sınırlamalar
+
+- **macOS-only** — LaunchAgent, brew, Homebrew Node/FFmpeg kullanılıyor. Windows desteği yok.
+- **Tek konuşmacı** için optimize. Multi-speaker diarization (Deepgram `diarize=true`) henüz açık değil.
+- **Auto-Cut yerinde keser** — UXP API'si programatik sequence duplicate desteklemediği için kesim aktif sequence üzerinde yapılır. Cmd+Z birden fazla undo gerektirir; bu yüzden modal uyarı her seferinde gösterilir. **Önce mutlaka sequence kopyası al.**
+- **Premiere 2026 (25.6+)** — Daha eski sürümlerde UXP API'leri eksik olabilir.
+
+---
+
+## Yol Haritası
+
+- [ ] Multi-speaker diarization UI'sı
+- [ ] Keyterm Prompting paneli (jargon/marka sözlüğü)
+- [ ] Streaming Deepgram (uzun videolar için progressive transcription)
+- [ ] Premiere caption track'e doğrudan altyazı yazma
+- [ ] Batch processing (birden fazla klip)
+
+---
 
 ## Lisans
 
-MIT — SEYO Reklam Ajansi, 2026
+MIT — © 2026 [SEYO Reklam Ajansı](https://seyoweb.com)
+
+Detay: [LICENSE](LICENSE)
+
+---
+
+## Katkı
+
+Issue + PR açabilirsin. Soru/öneri için: info@seyoweb.com

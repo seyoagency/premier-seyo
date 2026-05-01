@@ -3,3 +3,23 @@ node_modules/
 dist/
 *.log
 /tmp/
+
+# Build artefact (esbuild output, auto-regenerated)
+src/bundle.js
+
+# POC / dev tools (içinde .env API key olabilir)
+tools/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.AppleDouble
+.LSOverride

@@ -107,30 +107,26 @@ function applyCPSLimit(captions, cpsLimit, minDur) {
   return captions.map((cap, index) => {
     const charCount = cap.text.replace(/\n/g, " ").length;
     const start = Number(cap.start || 0);
-    const end = Math.max(Number(cap.end || start), start + 0.001);
-    const dur = end - start;
-    let newEnd = end;
+    let end = Math.max(Number(cap.end || start), start + 0.001);
 
-    // CPS asilirsa uzat
-    if (cpsLimit > 0 && dur > 0) {
-      const cps = charCount / dur;
+    if (cpsLimit > 0) {
+      const duration = Math.max(end - start, 0.001);
+      const cps = charCount / duration;
       if (cps > cpsLimit) {
-        const needDur = charCount / cpsLimit;
-        newEnd = start + needDur;
+        end = start + (charCount / cpsLimit);
       }
     }
-    // Min sure
-    if (minDur > 0 && (newEnd - start) < minDur) {
-      newEnd = start + minDur;
+
+    if (minDur > 0 && (end - start) < minDur) {
+      end = start + minDur;
     }
 
-    // Sonraki altyaziya tasmasin. SRT/VTT overlap bazi player'larda bozuluyor.
     const next = captions[index + 1];
     if (next && Number.isFinite(next.start)) {
-      newEnd = Math.min(newEnd, Math.max(start + 0.001, next.start - 0.001));
+      end = Math.min(end, Math.max(start + 0.001, next.start - 0.001));
     }
 
-    return { ...cap, index: index + 1, start, end: Math.max(start + 0.001, newEnd) };
+    return { ...cap, index: index + 1, start, end: Math.max(start + 0.001, end) };
   });
 }
 

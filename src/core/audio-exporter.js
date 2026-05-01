@@ -12,9 +12,13 @@
  */
 
 const daemon = require("../utils/daemon");
+const timelineMapper = require("../timeline/timeline-mapper");
 
 /**
- * Active sequence'in tum audio mixdown'ini WAV olarak export et
+ * Active sequence'in tum audio mixdown'ini WAV olarak export et.
+ * @returns {Promise<{ outputPath: string, clips: object[] }>}
+ *   Reconstruct tarafinda timeline → source mapping icin clips metadata'si
+ *   birlikte donduruluyor.
  */
 async function exportAudio({ sampleRate = 48000, mono = false, suffix = "" } = {}) {
   const ppro = require("premierepro");
@@ -37,7 +41,7 @@ async function exportAudio({ sampleRate = 48000, mono = false, suffix = "" } = {
     mono,
   }, 600000);
 
-  return res.outputPath;
+  return { outputPath: res.outputPath, clips };
 }
 
 /**
@@ -45,7 +49,7 @@ async function exportAudio({ sampleRate = 48000, mono = false, suffix = "" } = {
  * ile topla. Eger audio yoksa video track'leri kullan (videonun ses kanalini
  * FFmpeg cikaracak).
  *
- * Her clip objesi: { path, sourceIn, sourceOut, timelineStart, duration }
+ * Her clip objesi: { path, sourceIn, sourceOut, timelineStart, duration, trackIndex }
  */
 async function collectSequenceClips(sequence) {
   const ppro = require("premierepro");
@@ -59,14 +63,14 @@ async function collectSequenceClips(sequence) {
   if (audioTrackCount > 0) {
     for (let i = 0; i < audioTrackCount; i++) {
       const t = await sequence.getAudioTrack(i);
-      if (t) tracks.push(t);
+      if (t) tracks.push({ track: t, trackIndex: i });
     }
   }
 
   // Hic audio clip yoksa video'lardan cekelim
   const fallbackToVideo = tracks.length === 0 ||
-    (await Promise.all(tracks.map(async t => {
-      const items = await t.getTrackItems(1, false);
+    (await Promise.all(tracks.map(async ({ track }) => {
+      const items = await track.getTrackItems(1, false);
       return items && items.length > 0;
     }))).every(x => !x);
 
@@ -75,13 +79,13 @@ async function collectSequenceClips(sequence) {
         const r = [];
         for (let i = 0; i < videoTrackCount; i++) {
           const t = await sequence.getVideoTrack(i);
-          if (t) r.push(t);
+          if (t) r.push({ track: t, trackIndex: i });
         }
         return r;
       })()
     : tracks;
 
-  for (const track of finalTracks) {
+  for (const { track, trackIndex } of finalTracks) {
     const items = await track.getTrackItems(1, false); // Clip only
     if (!items) continue;
 
@@ -112,6 +116,7 @@ async function collectSequenceClips(sequence) {
         sourceOut,
         timelineStart,
         duration,
+        trackIndex: Number.isFinite(trackIndex) ? trackIndex : 0,
       });
     }
   }
@@ -121,14 +126,21 @@ async function collectSequenceClips(sequence) {
   const unique = [];
   const seen = new Set();
   for (const c of clips) {
-    const key = `${c.path}|${c.timelineStart.toFixed(3)}|${c.duration.toFixed(3)}`;
+    const key = [
+      c.path,
+      c.timelineStart.toFixed(3),
+      c.duration.toFixed(3),
+      c.sourceIn.toFixed(3),
+      c.sourceOut.toFixed(3),
+      c.trackIndex,
+    ].join("|");
     if (!seen.has(key)) {
       seen.add(key);
       unique.push(c);
     }
   }
 
-  return unique;
+  return timelineMapper.flattenTimelineClips(unique);
 }
 
 module.exports = { exportAudio, collectSequenceClips };

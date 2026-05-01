@@ -14,17 +14,63 @@
 
 const http = require("http");
 const { exec, execSync } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const deepgram = require("./deepgram-client");
 
-const PORT = parseInt(process.env.PREMIERECUT_PORT || "53117");
-const TMP_DIR = path.join(os.tmpdir(), "premiere-cut");
+const PORT = parseInt(process.env.PREMIERSEYO_PORT || process.env.PREMIERECUT_PORT || "53117");
+const TMP_DIR = path.join(os.tmpdir(), "premier-seyo");
+const TOKEN_DIR = path.join(os.homedir(), ".config", "premier-seyo");
+const TOKEN_FILE = path.join(TOKEN_DIR, "token");
 const PATH_ENV = `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
 
 // TMP dizini olustur
 if (!fs.existsSync(TMP_DIR)) {
   fs.mkdirSync(TMP_DIR, { recursive: true });
+}
+
+// ——— Auth token: ilk baslatmada uret, plugin paylasilan dosyadan okur ———
+let AUTH_TOKEN = "";
+function ensureAuthToken() {
+  try {
+    if (fs.existsSync(TOKEN_FILE)) {
+      const existing = fs.readFileSync(TOKEN_FILE, "utf-8").trim();
+      if (existing && existing.length >= 32) {
+        AUTH_TOKEN = existing;
+        return;
+      }
+    }
+  } catch {}
+  fs.mkdirSync(TOKEN_DIR, { recursive: true });
+  AUTH_TOKEN = crypto.randomBytes(32).toString("hex");
+  fs.writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600 });
+  try { fs.chmodSync(TOKEN_FILE, 0o600); } catch {}
+}
+ensureAuthToken();
+
+function isAuthorized(req) {
+  const token = req.headers["x-premiere-cut-token"] || req.headers["X-Premiere-Cut-Token"] || "";
+  if (!AUTH_TOKEN || token.length !== AUTH_TOKEN.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(AUTH_TOKEN));
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedPluginClient(req) {
+  const client = String(req.headers["x-premiere-cut-client"] || "").trim();
+  if (client !== "premierseyo-uxp") return false;
+
+  // UXP panel istekleri genelde Origin=null veya bos gelir. Normal web sayfalari
+  // custom header ile gelebilmek icin preflight gecmek zorunda; CORS yalnizca
+  // Origin=null'a izin verdigi icin browser kaynakli siteler bu yolu kullanamaz.
+  const origin = String(req.headers.origin || "").trim();
+  if (origin && origin !== "null") return false;
+
+  return true;
 }
 
 // ——— Yardimci Fonksiyonlar ———
@@ -49,9 +95,9 @@ function runCmd(cmd, timeoutMs = 600000) {
 function sendJson(res, status, payload) {
   res.writeHead(status, {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Origin": "null",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Premiere-Cut-Token, X-Premiere-Cut-Client",
   });
   res.end(JSON.stringify(payload));
 }
@@ -76,6 +122,33 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
+function humanizeFFmpegError(stderr) {
+  if (!stderr) return "FFmpeg ses çıkartamadı (bilinmeyen sebep).";
+  const text = String(stderr);
+  if (/no such file|cannot open|does not exist/i.test(text)) {
+    return "FFmpeg kaynak dosyayı bulamadı. Klipler taşınmış veya silinmiş olabilir.";
+  }
+  if (/invalid data|moov atom not found|corrupt|truncated|invalid header/i.test(text)) {
+    return "FFmpeg medya dosyasını okuyamadı (bozuk veya desteklenmeyen format).";
+  }
+  if (/permission denied/i.test(text)) {
+    return "FFmpeg dosyaya erişim izni alamadı. macOS izinlerini kontrol et.";
+  }
+  if (/no audio stream|stream specifier .* matches no streams/i.test(text)) {
+    return "FFmpeg ses kanalı bulamadı. Sequence'de ses var mı kontrol et.";
+  }
+  if (/disk full|no space left/i.test(text)) {
+    return "Disk dolu — FFmpeg çıktı dosyası yazamıyor.";
+  }
+  // Fallback: son 3 satırın hata içerenleri
+  const tail = text.split("\n")
+    .filter((l) => /error|fail|invalid/i.test(l))
+    .slice(-3)
+    .join(" | ")
+    .slice(-280);
+  return tail ? `FFmpeg hatası: ${tail}` : "FFmpeg ses çıkartırken hata aldı.";
+}
+
 function safeToken(value, fallback) {
   const token = String(value || "");
   return /^[a-zA-Z0-9_.-]+$/.test(token) ? token : fallback;
@@ -89,25 +162,22 @@ function finiteNumber(value, fallback = 0) {
 // ——— Handler'lar ———
 
 async function handlePing(req, res) {
-  sendJson(res, 200, { ok: true, service: "PremiereCut Daemon", version: "1.0.0" });
+  sendJson(res, 200, { ok: true, service: "PremierSEYO Daemon", version: "1.1.0" });
 }
 
 async function handleCheck(req, res) {
   const ffmpeg = await runCmd("ffmpeg -version", 5000);
-  const whisper = await runCmd("which whisper-cli", 5000);
-  const modelPaths = [
-    path.join(os.homedir(), ".local/share/whisper/ggml-large-v3.bin"),
-    path.join(os.homedir(), ".local/share/whisper/ggml-medium.bin"),
-    path.join(os.homedir(), ".local/share/whisper/ggml-small.bin"),
-    path.join(os.homedir(), ".local/share/whisper/ggml-base.bin"),
-  ];
-  const availableModels = modelPaths.filter((p) => fs.existsSync(p)).map((p) => path.basename(p));
+  const deepgramReady = deepgram.hasApiKey();
 
   sendJson(res, 200, {
     ok: true,
     ffmpeg: ffmpeg.ok,
-    whisper: whisper.ok,
-    models: availableModels,
+    deepgram: deepgramReady,
+    // Geriye uyum: eski plugin sürümleri whisper field'ını okuyor.
+    // Yeni daemon Deepgram kullanıyor ama bu alan true döner ki "STT hazır" görünsün.
+    whisper: deepgramReady,
+    models: deepgramReady ? ["nova-3"] : [],
+    keyFile: deepgram.KEY_FILE,
   });
 }
 
@@ -127,7 +197,7 @@ async function handleExportAudio(req, res) {
     const result = await runCmd(cmd, 300000);
 
     if (!result.ok) {
-      return sendJson(res, 500, { ok: false, error: "FFmpeg hatasi", stderr: result.stderr });
+      return sendJson(res, 500, { ok: false, error: humanizeFFmpegError(result.stderr), stderr: result.stderr });
     }
 
     sendJson(res, 200, { ok: true, outputPath });
@@ -138,71 +208,58 @@ async function handleExportAudio(req, res) {
 
 async function handleSilenceDetect(req, res) {
   try {
-    const { audioPath, noiseThreshold = -35, minDuration = 0.4 } = await parseBody(req);
+    const { audioPath, minDuration = 0.4, language = "tr", uttSplit = 0.8 } = await parseBody(req);
     if (!audioPath || !fs.existsSync(audioPath)) {
       return sendJson(res, 400, { ok: false, error: "audioPath gecersiz" });
     }
 
-    const threshold = finiteNumber(noiseThreshold, -35);
     const minSilence = finiteNumber(minDuration, 0.4);
-    const filter = `silencedetect=noise=${threshold}dB:d=${minSilence}`;
-    const cmd = `ffmpeg -i ${shellQuote(audioPath)} -af ${shellQuote(filter)} -f null - 2>&1`;
-    const result = await runCmd(cmd, 300000);
+    const t0 = Date.now();
+    const response = await deepgram.transcribeFile(audioPath, { language, uttSplit });
+    const regions = deepgram.deriveSilenceRegions(response, { minSilence });
+    const duration = deepgram.getDuration(response);
+    const cached = (Date.now() - t0) < 200; // <200ms = cache hit
 
-    const output = result.stdout + "\n" + result.stderr;
-    const regions = parseSilenceOutput(output);
-    const duration = parseDuration(output);
+    console.log(`SILENCE-DETECT ${path.basename(audioPath)} minDur=${minSilence}s → ${regions.length} region, dur=${duration.toFixed(2)}s${cached ? " (cache)" : ""}`);
+    for (const r of regions) {
+      console.log(`  silence ${r.start.toFixed(3)}-${r.end.toFixed(3)} (${r.duration.toFixed(3)}s)`);
+    }
 
     sendJson(res, 200, { ok: true, regions, duration });
   } catch (err) {
+    console.error("SILENCE-DETECT error:", err.message);
     sendJson(res, 500, { ok: false, error: err.message });
   }
 }
 
 async function handleTranscribe(req, res) {
   try {
-    const { audioPath, language = "auto", model = "large-v3" } = await parseBody(req);
+    const {
+      audioPath,
+      language = "tr",
+      uttSplit = 0.8,
+      keyterm = null,
+      // model: legacy parametre (whisper "large-v3" gibi). Deepgram kullanıldığında
+      // sadece yapay olarak "nova-3" sabit; gelen değer görmezden gelinir.
+    } = await parseBody(req);
+
     if (!audioPath || !fs.existsSync(audioPath)) {
       return sendJson(res, 400, { ok: false, error: "audioPath gecersiz" });
     }
 
-    const safeModel = safeToken(model, "large-v3");
-    const safeLanguage = language === "auto" ? "auto" : safeToken(language, "auto");
-    const modelPath = path.join(os.homedir(), `.local/share/whisper/ggml-${safeModel}.bin`);
-    if (!fs.existsSync(modelPath)) {
-      return sendJson(res, 400, { ok: false, error: `Model bulunamadi: ${modelPath}` });
-    }
+    const t0 = Date.now();
+    const response = await deepgram.transcribeFile(audioPath, {
+      language,
+      uttSplit,
+      keyterm: Array.isArray(keyterm) ? keyterm : null,
+    });
+    const cached = (Date.now() - t0) < 200;
+    const utterances = response?.results?.utterances || [];
+    console.log(`TRANSCRIBE ${path.basename(audioPath)} language=${language} → ${utterances.length} utterance, dur=${(response?.metadata?.duration || 0).toFixed(2)}s${cached ? " (cache)" : ""}`);
 
-    // 16kHz mono WAV'a cevir (whisper icin ideal)
-    const jobId = `whisper-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const whisperInput = path.join(TMP_DIR, `${jobId}.wav`);
-    const convertCmd = `ffmpeg -y -i ${shellQuote(audioPath)} -ar 16000 -ac 1 -acodec pcm_s16le ${shellQuote(whisperInput)}`;
-    const conv = await runCmd(convertCmd, 120000);
-    if (!conv.ok) {
-      return sendJson(res, 500, { ok: false, error: "Audio format donusumu basarisiz", stderr: conv.stderr });
-    }
-
-    // whisper-cli calistir
-    // -oj: JSON cikti  -ojf: full JSON (word timestamps dahil)  -ml 1: her kelime ayri segment
-    const langFlag = safeLanguage === "auto" ? "" : `-l ${safeLanguage}`;
-    const outputJson = path.join(TMP_DIR, jobId);
-    const cmd = `whisper-cli -m ${shellQuote(modelPath)} ${langFlag} -f ${shellQuote(whisperInput)} -oj -ojf -of ${shellQuote(outputJson)} -ml 1 --split-on-word 2>&1`;
-
-    const result = await runCmd(cmd, 1800000); // 30 dakika
-    if (!result.ok) {
-      return sendJson(res, 500, { ok: false, error: "Whisper hatasi", stderr: result.stderr });
-    }
-
-    // JSON oku
-    const jsonPath = outputJson + ".json";
-    if (!fs.existsSync(jsonPath)) {
-      return sendJson(res, 500, { ok: false, error: "Whisper JSON ciktisi bulunamadi" });
-    }
-    const jsonRaw = fs.readFileSync(jsonPath, "utf-8");
-    const parsed = JSON.parse(jsonRaw);
-
-    sendJson(res, 200, { ok: true, result: parsed });
+    sendJson(res, 200, { ok: true, result: response });
   } catch (err) {
+    console.error("TRANSCRIBE error:", err.message);
     sendJson(res, 500, { ok: false, error: err.message });
   }
 }
@@ -319,7 +376,7 @@ async function handleBuildSequenceAudio(req, res) {
     const result = await runCmd(cmd, 600000);
     if (!result.ok) {
       console.error("BUILD-SEQ-AUDIO FFmpeg stderr:", result.stderr);
-      return sendJson(res, 500, { ok: false, error: "FFmpeg mixdown: " + (result.stderr.split("\n").filter(l => l.includes("Error") || l.includes("error")).slice(-3).join(" | ") || "unknown").substring(0, 200), stderr: result.stderr.substring(0, 3000) });
+      return sendJson(res, 500, { ok: false, error: humanizeFFmpegError(result.stderr), stderr: result.stderr.substring(0, 3000) });
     }
 
     try { fs.rmSync(tmpSeg, { recursive: true, force: true }); } catch {}
@@ -340,6 +397,120 @@ async function handleReveal(req, res) {
     sendJson(res, 200, { ok: true });
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err.message });
+  }
+}
+
+async function handleHomeDir(req, res) {
+  sendJson(res, 200, { ok: true, homeDir: os.homedir(), documentsDir: path.join(os.homedir(), "Documents") });
+}
+
+async function handleLog(req, res) {
+  try {
+    const { tag = "plugin", message = "" } = await parseBody(req);
+    console.log(`[${tag}] ${message}`);
+    sendJson(res, 200, { ok: true });
+  } catch (err) {
+    sendJson(res, 500, { ok: false, error: err.message });
+  }
+}
+
+async function handleSetDeepgramKey(req, res) {
+  try {
+    const { key } = await parseBody(req);
+    const trimmed = String(key || "").trim();
+    if (!trimmed) {
+      return sendJson(res, 400, { ok: false, error: "API key bos olamaz" });
+    }
+    if (trimmed.length < 20) {
+      return sendJson(res, 400, { ok: false, error: "API key cok kisa (min 20 karakter)" });
+    }
+
+    const dir = path.dirname(deepgram.KEY_FILE);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(deepgram.KEY_FILE, trimmed, { mode: 0o600 });
+    try { fs.chmodSync(deepgram.KEY_FILE, 0o600); } catch {}
+
+    deepgram.clearCache();
+    console.log(`SET-DEEPGRAM-KEY → ${deepgram.KEY_FILE} (${trimmed.length} char)`);
+    sendJson(res, 200, { ok: true, keyFile: deepgram.KEY_FILE });
+  } catch (err) {
+    console.error("SET-DEEPGRAM-KEY error:", err.message);
+    sendJson(res, 500, { ok: false, error: err.message });
+  }
+}
+
+async function handleDeepgramTest(req, res) {
+  // Deepgram'a hafif bir auth isteği gönder; key gecerli mi dogrula.
+  // /v1/projects auth gerektirir, kucuk JSON doner — pre-recorded audio gondermeyiz.
+  // POST + body.key gönderilirse o key ile test edilir (stored key bozulmaz);
+  // GET veya body yoksa stored key kullanılır.
+  try {
+    let tempKey = null;
+    if (req.method === "POST") {
+      try {
+        const body = await parseBody(req);
+        if (body && typeof body.key === "string" && body.key.trim().length >= 20) {
+          tempKey = body.key.trim();
+        }
+      } catch {
+        // body parse hatasi sessiz — stored key'e dus
+      }
+    }
+    const apiKey = tempKey || deepgram.getApiKey();
+    if (!apiKey) {
+      return sendJson(res, 200, { ok: false, status: "no_key", message: "API key tanimli degil" });
+    }
+
+    const https = require("https");
+    const result = await new Promise((resolve) => {
+      const req2 = https.request(
+        {
+          method: "GET",
+          hostname: "api.deepgram.com",
+          path: "/v1/projects",
+          headers: { Authorization: `Token ${apiKey}` },
+          timeout: 10000,
+        },
+        (r) => {
+          const chunks = [];
+          r.on("data", (c) => chunks.push(c));
+          r.on("end", () => {
+            const body = Buffer.concat(chunks).toString("utf-8");
+            resolve({ statusCode: r.statusCode || 0, body });
+          });
+        }
+      );
+      req2.on("timeout", () => {
+        req2.destroy();
+        resolve({ statusCode: 0, body: "timeout" });
+      });
+      req2.on("error", (e) => resolve({ statusCode: 0, body: e.message }));
+      req2.end();
+    });
+
+    if (result.statusCode === 200) {
+      let projectCount = 0;
+      try {
+        const parsed = JSON.parse(result.body);
+        projectCount = Array.isArray(parsed.projects) ? parsed.projects.length : 0;
+      } catch {}
+      return sendJson(res, 200, {
+        ok: true,
+        status: "valid",
+        message: "Bağlandı",
+        projectCount,
+      });
+    }
+    if (result.statusCode === 401 || result.statusCode === 403) {
+      return sendJson(res, 200, { ok: false, status: "invalid", message: "Key gecersiz veya yetkisiz" });
+    }
+    return sendJson(res, 200, {
+      ok: false,
+      status: "error",
+      message: `Deepgram cevap kodu: ${result.statusCode || "ag hatasi"}`,
+    });
+  } catch (err) {
+    sendJson(res, 500, { ok: false, status: "error", message: err.message });
   }
 }
 
@@ -381,6 +552,11 @@ function parseDuration(output) {
 const routes = {
   "GET /ping": handlePing,
   "GET /check": handleCheck,
+  "GET /home-dir": handleHomeDir,
+  "POST /log": handleLog,
+  "POST /set-deepgram-key": handleSetDeepgramKey,
+  "GET /deepgram-test": handleDeepgramTest,
+  "POST /deepgram-test": handleDeepgramTest,
   "POST /export-audio": handleExportAudio,
   "POST /silence-detect": handleSilenceDetect,
   "POST /transcribe": handleTranscribe,
@@ -393,9 +569,9 @@ const server = http.createServer(async (req, res) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": "null",
       "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, X-Premiere-Cut-Token, X-Premiere-Cut-Client",
     });
     return res.end();
   }
@@ -405,6 +581,17 @@ const server = http.createServer(async (req, res) => {
 
   if (!handler) {
     return sendJson(res, 404, { ok: false, error: `Route bulunamadi: ${key}` });
+  }
+
+  const tokenHeader = req.headers["x-premiere-cut-token"] || "";
+  if (key !== "GET /ping") {
+    if (tokenHeader) {
+      if (!isAuthorized(req)) {
+        return sendJson(res, 401, { ok: false, error: "Gecersiz token" });
+      }
+    } else if (!isTrustedPluginClient(req)) {
+      return sendJson(res, 401, { ok: false, error: "Yetki gerekli (trusted plugin client veya token)" });
+    }
   }
 
   try {

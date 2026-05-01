@@ -22,9 +22,12 @@
  * @returns {BreathRegion[]}
  */
 function findBreathCandidates(silenceRegions, {
-  minDuration = 0.15,
-  maxDuration = 1.5,
+  minDuration = 0.05,
+  maxDuration = 0.25,
 } = {}) {
+  // Gercek nefes/dudak sesleri genellikle <250ms. Daha uzun bolumler konusma
+  // sayilir ve keep'te kalmali. Onceki default (0.15-1.5s) konusma kisimlarini
+  // yanlislikla breath olarak isaretliyordu.
   if (silenceRegions.length < 2) return [];
 
   const breaths = [];

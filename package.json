@@ -1,13 +1,14 @@
 {
-  "name": "premiere-cut",
-  "version": "1.0.1",
+  "name": "premier-seyo",
+  "version": "1.1.0",
   "description": "Auto-Cut silence/breath removal and Auto-SRT subtitle generation for Premiere Pro",
   "author": "SEYO",
   "license": "MIT",
   "private": true,
   "scripts": {
-    "bundle": "npx --yes esbuild src/index.js --bundle --platform=browser --format=iife --external:uxp --external:premierepro --outfile=src/bundle.js",
+    "bundle": "npx --yes esbuild src/index.js --bundle --platform=browser --format=iife --external:uxp --external:premierepro --external:fs --external:os --external:path --outfile=src/bundle.js",
     "inline": "node scripts/inline-assets.js",
-    "build": "npm run bundle && npm run inline"
+    "deploy": "node scripts/deploy-plugin.js",
+    "build": "npm run bundle && npm run inline && npm run deploy"
   }
 }

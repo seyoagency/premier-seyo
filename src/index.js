@@ -41,6 +41,7 @@ try {
 let analysisResult = null;
 let transcriptResult = null;
 let currentAudioPath = null;
+let settingsHydrated = false;
 
 // ——— Init ———
 function init() {
@@ -51,11 +52,16 @@ function init() {
     setupTabs();
     setupSliders();
     setupSteppers();
+    setupPersistedInputs();
     setupCollapsibles();
     setupButtons();
+    setupSettingsDrawer();
     restoreSettings();
+    settingsHydrated = true;
+    saveCurrentSettings();
     _earlyStatus("Init tamam — dep check");
     checkDependencies();
+    refreshConnectionStatus();
   } catch (e) {
     _earlyStatus("Init hatasi: " + e.message);
     console.error("PremiereCut init error:", e);
@@ -97,6 +103,7 @@ function setupSliders() {
     { id: "maxSubDuration", suffix: "s" },
     { id: "minSubDuration", suffix: "s" },
     { id: "cpsLimit", suffix: "" },
+    { id: "subtitleOffset", suffix: "ms" },
   ];
 
   sliders.forEach(({ id, suffix }) => {
@@ -291,6 +298,22 @@ function setupSteppers() {
   });
 }
 
+function setupPersistedInputs() {
+  const persistedIds = [
+    "detectBreaths",
+    "splitOnSentence",
+    "splitOnPause",
+    "srt-language",
+    "srt-model",
+  ];
+
+  persistedIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("change", saveCurrentSettings);
+  });
+}
+
 function setupCollapsibles() {
   ["advanced-cut", "advanced-srt"].forEach(prefix => {
     const toggle = document.getElementById(`${prefix}-toggle`);
@@ -318,7 +341,13 @@ function setupButtons() {
 function handleResetSettings() {
   config.reset();
   restoreSettings();
-  setStatus("Ayarlar varsayilana donduruldu", "success");
+  // Eski analiz state'ini temizle — yeni ayarlarla tekrar analiz gerekli
+  analysisResult = null;
+  const resultsEl = document.getElementById("results-cut");
+  if (resultsEl) resultsEl.style.display = "none";
+  const applyBtn = document.getElementById("btn-apply-cut");
+  if (applyBtn) applyBtn.disabled = true;
+  setStatus("Ayarlar sifirlandi — Analiz Et'e tekrar basin", "success");
 }
 
 // ——— Dependency Check ———
@@ -331,7 +360,7 @@ async function checkDependencies() {
 
     if (!res.ffmpeg || !res.whisper || !(res.models && res.models.length)) {
       const dc = document.getElementById("dep-check-cut");
-      if (dc) dc.style.display = "block";
+      if (dc) dc.style.display = "flex";
     }
 
     setStatus("Hazir", "success");
@@ -341,8 +370,8 @@ async function checkDependencies() {
     updateDepBadge("whisper", false);
     updateDepBadge("model", false);
     const dc = document.getElementById("dep-check-cut");
-    if (dc) dc.style.display = "block";
-    setStatus("Daemon baslatilmamis. install-daemon.sh calistirin.", "error");
+    if (dc) dc.style.display = "flex";
+    setStatus(err.message || "Daemon baglantisi kurulamadi", "error");
   }
 }
 
@@ -362,7 +391,9 @@ async function handleAnalyze() {
 
   try {
     updateProgress("cut", 10, "Sequence'den ses cikariliyor...");
-    currentAudioPath = await audioExporter.exportAudio({ sampleRate: 48000 });
+    const exported = await audioExporter.exportAudio({ sampleRate: 48000, mono: true });
+    currentAudioPath = exported.outputPath;
+    const clipsMeta = exported.clips;
 
     updateProgress("cut", 40, "Sessizlikler tespit ediliyor...");
     const settings = getCurrentSettings();
@@ -380,12 +411,12 @@ async function handleAnalyze() {
     }
 
     updateProgress("cut", 90, "Segmentler hesaplaniyor...");
-    const paddingMs = parseInt(document.getElementById("padding").value);
     analysisResult = segmentBuilder.build(totalDuration, silenceRegions, breathRegions, {
-      paddingBefore: paddingMs / 1000,
-      paddingAfter: paddingMs / 1000,
+      paddingBefore: settings.paddingBefore,
+      paddingAfter: settings.paddingAfter,
       minKeepDuration: settings.minKeepDuration,
     });
+    analysisResult.clipsMeta = clipsMeta;
 
     updateProgress("cut", 100, "Tamamlandi");
     displayCutResults(analysisResult);
@@ -394,7 +425,13 @@ async function handleAnalyze() {
     if (!analysisResult.keep || analysisResult.keep.length === 0) {
       setStatus("Tutulacak bolge yok — esigi dusur (-40 dB gibi) ve 'Sifirla' deneyin", "error");
     } else {
-      setStatus(`Analiz tamam: ${analysisResult.remove.length} sessiz, ${analysisResult.keep.length} tutulacak bolge`, "success");
+      const s = analysisResult.stats;
+      setStatus(
+        `Analiz: ${s.silenceCount} sessiz, ${analysisResult.remove.length} remove-bolge, ` +
+        `${analysisResult.keep.length} keep, kesilen=${s.totalRemove.toFixed(2)}s, ` +
+        `pad=${settings.paddingBefore.toFixed(3)}s`,
+        "success"
+      );
     }
 
   } catch (err) {
@@ -421,6 +458,19 @@ async function handleApplyCut() {
     return;
   }
 
+  // Sequence-koruma uyarısı: Auto-Cut yerinde keser, Cmd+Z tek-adım değil.
+  // Kullanıcı her seferinde sequence kopyasını aldığını onaylasın.
+  const proceed = await showConfirm({
+    title: "Sequence kopyası aldın mı?",
+    body: 'Auto-Cut <strong>aktif sequence\'i yerinde keser</strong>. Cmd+Z birden fazla undo gerektirir, tek adımda geri almıyor. Lütfen önce <strong>Project paneli\'nde sequence\'e sağ tık → "Duplicate"</strong> yaparak kopya al, sonra devam et.',
+    confirmLabel: "Kopya aldım, devam et",
+    cancelLabel: "İptal",
+  });
+  if (!proceed) {
+    setStatus("İptal edildi — sequence kopyası al, sonra tekrar başlat", "");
+    return;
+  }
+
   const btn = document.getElementById("btn-apply-cut");
   btn.disabled = true;
   showProgress("cut", true, "Kesim basliyor (Cmd+Z ile geri alinabilir)...");
@@ -430,12 +480,19 @@ async function handleApplyCut() {
     const seq = await duplicator.duplicateActiveSequence(" - AutoCut");
 
     updateProgress("cut", 20, "Kesim uygulaniyor...");
+    await daemon.log("reconstruct", `START keep=${analysisResult.keep.length} clipsMeta=${(analysisResult.clipsMeta||[]).length}`);
     const result = await reconstructor.reconstruct(
       seq,
-      analysisResult.remove,
       (pct) => updateProgress("cut", 20 + Math.round(pct * 0.8), `%${pct}`),
-      analysisResult.keep
+      analysisResult.keep,
+      analysisResult.clipsMeta,
+      (stageMsg) => {
+        updateProgress("cut", null, stageMsg);
+        setStatus(stageMsg);
+        daemon.log("reconstruct", stageMsg);
+      }
     );
+    await daemon.log("reconstruct", `END success=${result.success} message=${result.message}`);
 
     updateProgress("cut", 100, "Tamamlandi");
     setStatus(`AutoCut: ${result.message}`, result.success ? "success" : "error");
@@ -457,18 +514,72 @@ async function handleTranscribe() {
 
   try {
     updateProgress("srt", 10, "Ses cikariliyor...");
-    const audioPath = await audioExporter.exportAudio({
+    const { outputPath: audioPath } = await audioExporter.exportAudio({
       sampleRate: 16000,
       mono: true,
       suffix: "-srt",
     });
     currentAudioPath = audioPath;
 
-    updateProgress("srt", 20, "Whisper calisiyor (1-5 dakika surebilir)...");
-    const language = document.getElementById("srt-language").value;
-    const model = document.getElementById("srt-model").value;
+    // Auto-offset icin: gercek konusma baslangicini bul (silence detect)
+    updateProgress("srt", 15, "Konusma baslangici tespit ediliyor...");
+    let realSpeechStart = 0;
+    let silenceRegions = [];
+    try {
+      const sd = await silenceDetector.detect(audioPath, {
+        noiseThreshold: -40,
+        minDuration: 0.25,
+      });
+      silenceRegions = Array.isArray(sd.regions) ? sd.regions : [];
+      // Eger ilk silence dosyanin basindan basliyorsa, gercek konusma silence
+      // bittiginde baslar.
+      if (silenceRegions.length > 0 && silenceRegions[0].start <= 0.05) {
+        realSpeechStart = silenceRegions[0].end;
+      }
+    } catch (e) {
+      console.warn("Auto-offset silence detect hatasi:", e.message);
+    }
 
-    const segments = await transcriber.transcribe(audioPath, { language, model });
+    updateProgress("srt", 20, "Deepgram Nova-3 transkripsiyon (Türkçe)...");
+    const preTranscribeSettings = getCurrentSettings();
+    const language = preTranscribeSettings.language || "tr";
+
+    let segments = await transcriber.transcribe(audioPath, { language });
+
+    segments = sanitizeTranscriptSegments(segments);
+
+    // Auto-offset hesapla: Whisper'in ilk word.start'i ile gercek konusma
+    // baslangici arasindaki fark. Sonra kullanici slider degeri eklenir
+    // (manual ince ayar — default 0).
+    const whisperFirstWord = findFirstSpeechStart(segments);
+    let autoOffsetSec = 0;
+    if (Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity && realSpeechStart > 0) {
+      autoOffsetSec = realSpeechStart - whisperFirstWord;
+      // Auto offset altyaziyi sesin ONUNE cekmemeli; sadece gecikmisse ileri al.
+      autoOffsetSec = Math.max(0, Math.min(2, autoOffsetSec));
+      if (autoOffsetSec < 0.04) autoOffsetSec = 0;
+    }
+    if (autoOffsetSec) {
+      segments = applyOffsetToSegments(segments, autoOffsetSec);
+    }
+    if (silenceRegions.length > 0) {
+      segments = stripSilenceOnlyWords(segments, silenceRegions);
+    }
+
+    const manualOffsetSec = (preTranscribeSettings.subtitleOffsetMs || 0) / 1000;
+    if (manualOffsetSec) {
+      segments = applyOffsetToSegments(segments, manualOffsetSec);
+    }
+
+    setStatus(
+      `Auto-offset: +${Math.round(autoOffsetSec * 1000)}ms ` +
+      `(gercek ${realSpeechStart.toFixed(2)}s, Whisper ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s) ` +
+      `manuel ${Math.round(manualOffsetSec * 1000)}ms`
+    );
+
+    if (segments.length === 0) {
+      throw new Error("Anlamli konusma segmenti bulunamadi");
+    }
 
     updateProgress("srt", 85, "Altyazilar olusturuluyor...");
 
@@ -492,6 +603,10 @@ async function handleTranscribe() {
       }
     }
 
+    if (allWords.length === 0) {
+      throw new Error("Altyazi icin kullanilabilir kelime bulunamadi");
+    }
+
     const settings = getCurrentSettings();
     const captions = captionGrouper.group(allWords, settings);
 
@@ -509,6 +624,100 @@ async function handleTranscribe() {
   }
 }
 
+function isMeaningfulWordText(text) {
+  if (!text) return false;
+  const stripped = String(text).replace(/[\s\.,!?;:…\-"'`()\[\]{}]+/g, "");
+  return stripped.length > 0;
+}
+
+function sanitizeTranscriptSegments(segments) {
+  return (segments || [])
+    .map((seg) => {
+      const words = (seg.words || []).filter((w) => (
+        isMeaningfulWordText(w.text) &&
+        Number.isFinite(w.start) &&
+        Number.isFinite(w.end) &&
+        w.end > w.start
+      ));
+      return {
+        ...seg,
+        words,
+      };
+    })
+    .filter((seg) => seg.words.length > 0 || isMeaningfulWordText(seg.text));
+}
+
+function findFirstSpeechStart(segments) {
+  let first = Infinity;
+  for (const seg of (segments || [])) {
+    if (Array.isArray(seg.words)) {
+      for (const w of seg.words) {
+        if (isMeaningfulWordText(w.text) && Number.isFinite(w.start)) {
+          first = Math.min(first, w.start);
+          break;
+        }
+      }
+    }
+    if (Number.isFinite(first) && first < Infinity) break;
+    if (isMeaningfulWordText(seg.text) && Number.isFinite(seg.start)) {
+      first = Math.min(first, seg.start);
+    }
+  }
+  return first;
+}
+
+function applyOffsetToSegments(segments, offsetSec) {
+  if (!offsetSec) return segments;
+  return (segments || []).map((seg) => ({
+    ...seg,
+    start: Math.max(0, seg.start + offsetSec),
+    end: Math.max(0, seg.end + offsetSec),
+    words: (seg.words || []).map((w) => ({
+      ...w,
+      start: Math.max(0, w.start + offsetSec),
+      end: Math.max(0, w.end + offsetSec),
+    })),
+  }));
+}
+
+function stripSilenceOnlyWords(segments, silenceRegions) {
+  return (segments || [])
+    .map((seg) => {
+      const filteredWords = (seg.words || []).filter((word) => !isWordInsideSilence(word, silenceRegions));
+      if (filteredWords.length > 0) {
+        return {
+          ...seg,
+          start: filteredWords[0].start,
+          end: filteredWords[filteredWords.length - 1].end,
+          text: filteredWords.map((w) => w.text).join(" "),
+          words: filteredWords,
+        };
+      }
+
+      if (isMeaningfulWordText(seg.text) && !isWordInsideSilence(seg, silenceRegions)) {
+        return { ...seg, words: [] };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function isWordInsideSilence(item, silenceRegions) {
+  if (!item || !Array.isArray(silenceRegions) || silenceRegions.length === 0) return false;
+  const start = Number(item.start);
+  const end = Number(item.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
+  const midpoint = (start + end) / 2;
+
+  return silenceRegions.some((region) => (
+    region &&
+    region.duration >= 0.25 &&
+    midpoint >= region.start + 0.05 &&
+    midpoint <= region.end - 0.05
+  ));
+}
+
 // ——— AUTO-SRT: Save ———
 async function handleSaveSRT() {
   if (!transcriptResult || !transcriptResult.captions.length) {
@@ -523,8 +732,9 @@ async function handleSaveSRT() {
     const seqName = sequence.name || "sequence";
     const safeName = String(seqName).replace(/[^a-zA-Z0-9_-]/g, "_");
 
-    // macOS user Documents dizinine kaydet
-    const outputDir = "/Users/" + getUserName() + "/Documents/PremierSEYO";
+    // Daemon'dan gercek home dizinini al (UXP'de os.userInfo guvenilmez)
+    const { documentsDir } = await daemon.getHomeDirs();
+    const outputDir = `${documentsDir}/PremierSEYO`;
     const savedFiles = [];
 
     if (document.getElementById("output-srt").checked) {
@@ -565,16 +775,6 @@ async function handleSaveSRT() {
 }
 
 // ——— UI Helpers ———
-
-function getUserName() {
-  // UXP'de os.userInfo() sinirli olabilir — path'ten cikar
-  try {
-    const os = require("os");
-    return os.userInfo().username;
-  } catch {
-    return "seyo"; // fallback
-  }
-}
 
 function displayCutResults(result) {
   const { stats } = result;
@@ -648,7 +848,9 @@ function showProgress(tab, visible, text) {
 function updateProgress(tab, percent, text) {
   const fill = document.getElementById(`progress-${tab}-fill`);
   const textEl = document.getElementById(`progress-${tab}-text`);
-  if (fill) fill.style.width = `${percent}%`;
+  if (fill && typeof percent === "number" && isFinite(percent)) {
+    fill.style.width = `${percent}%`;
+  }
   if (text && textEl) textEl.textContent = text;
 }
 
@@ -668,32 +870,50 @@ function escapeHtml(str) {
 function readSliderValue(id) {
   const el = document.getElementById(id);
   if (!el) return NaN;
-  // cslider: data-value; native range: value
-  return parseFloat(el.dataset && el.dataset.value !== undefined ? el.dataset.value : el.value);
+  // UXP'de dataset property bazen NaN/undefined dönüyor; getAttribute daha güvenilir
+  if (el.getAttribute) {
+    const attr = el.getAttribute("data-value");
+    if (attr !== null && attr !== undefined && attr !== "") {
+      const n = parseFloat(attr);
+      if (!isNaN(n)) return n;
+    }
+  }
+  if (el.dataset && el.dataset.value !== undefined) {
+    const n = parseFloat(el.dataset.value);
+    if (!isNaN(n)) return n;
+  }
+  return parseFloat(el.value);
+}
+
+function safeNumber(val, fallback) {
+  return (typeof val === "number" && isFinite(val)) ? val : fallback;
 }
 
 function getCurrentSettings() {
-  const paddingMs = readSliderValue("padding");
-  const paddingSeconds = (isNaN(paddingMs) ? 150 : paddingMs) / 1000;
+  const paddingMs = safeNumber(readSliderValue("padding"), 150);
+  const langSel = document.getElementById("srt-language");
   return {
-    silenceThreshold: parseInt(readSliderValue("silenceThreshold")),
-    minSilenceDuration: readSliderValue("minSilenceDuration"),
-    paddingBefore: paddingSeconds,
-    paddingAfter: paddingSeconds,
+    silenceThreshold: safeNumber(parseInt(readSliderValue("silenceThreshold")), -40),
+    minSilenceDuration: safeNumber(readSliderValue("minSilenceDuration"), 0.4),
+    paddingBefore: paddingMs / 1000,
+    paddingAfter: paddingMs / 1000,
     detectBreaths: document.getElementById("detectBreaths").checked,
-    minKeepDuration: readSliderValue("minKeepDuration"),
-    maxLinesPerSub: parseInt(document.getElementById("maxLinesPerSub-val").textContent),
-    maxWordsPerLine: parseInt(document.getElementById("maxWordsPerLine-val").textContent),
-    maxCharsPerLine: 999, // devre disi
-    maxSubDuration: readSliderValue("maxSubDuration"),
-    minSubDuration: readSliderValue("minSubDuration"),
-    cpsLimit: parseInt(readSliderValue("cpsLimit")),
+    minKeepDuration: safeNumber(readSliderValue("minKeepDuration"), 0.3),
+    maxLinesPerSub: safeNumber(parseInt(document.getElementById("maxLinesPerSub-val").textContent), 2),
+    maxWordsPerLine: safeNumber(parseInt(document.getElementById("maxWordsPerLine-val").textContent), 6),
+    maxCharsPerLine: 999,
+    maxSubDuration: safeNumber(readSliderValue("maxSubDuration"), 5),
+    minSubDuration: safeNumber(readSliderValue("minSubDuration"), 0),
+    cpsLimit: safeNumber(parseInt(readSliderValue("cpsLimit")), 20),
+    subtitleOffsetMs: safeNumber(readSliderValue("subtitleOffset"), 0),
+    language: (langSel && langSel.value) || "tr",
     splitOnSentence: document.getElementById("splitOnSentence").checked,
     splitOnPause: document.getElementById("splitOnPause").checked,
   };
 }
 
 function saveCurrentSettings() {
+  if (!settingsHydrated) return;
   config.save(getCurrentSettings());
 }
 
@@ -706,6 +926,9 @@ function restoreSettings() {
   setSlider("maxSubDuration", s.maxSubDuration, "s");
   setSlider("minSubDuration", s.minSubDuration, "s");
   setSlider("cpsLimit", s.cpsLimit, "");
+  setSlider("subtitleOffset", s.subtitleOffsetMs != null ? s.subtitleOffsetMs : 0, "ms");
+  const langSel = document.getElementById("srt-language");
+  if (langSel && s.language) langSel.value = s.language;
   setStepperVal("maxLinesPerSub", s.maxLinesPerSub);
   setStepperVal("maxWordsPerLine", s.maxWordsPerLine);
   setCheckbox("detectBreaths", s.detectBreaths);
@@ -751,6 +974,224 @@ function setStepperVal(id, value) {
 function setCheckbox(id, checked) {
   const cb = document.getElementById(id);
   if (cb) cb.checked = checked;
+}
+
+// ——— Settings drawer + API key onboarding ———
+function setupSettingsDrawer() {
+  const backdrop = document.getElementById("drawer-backdrop");
+  const drawer = document.getElementById("drawer-settings");
+  const closeBtn = document.getElementById("drawer-close");
+  const settingsBtn = document.getElementById("btn-settings");
+  const onboardingBtn = document.getElementById("btn-onboarding-open");
+  const connBadge = document.getElementById("conn-badge");
+  const keyInput = document.getElementById("api-key-input");
+  const keyToggle = document.getElementById("api-key-toggle");
+  const testBtn = document.getElementById("btn-test-key");
+  const saveBtn = document.getElementById("btn-save-key");
+  const signupLink = document.getElementById("link-deepgram-signup");
+  const getKeyLink = document.getElementById("link-get-key");
+
+  const open = () => {
+    if (!drawer) return;
+    drawer.classList.add("open");
+    if (backdrop) backdrop.classList.add("open");
+    setTimeout(() => { if (keyInput && document.body.classList.contains("no-key")) keyInput.focus(); }, 280);
+  };
+  const close = () => {
+    if (drawer) drawer.classList.remove("open");
+    if (backdrop) backdrop.classList.remove("open");
+  };
+
+  if (settingsBtn) settingsBtn.addEventListener("click", open);
+  if (onboardingBtn) onboardingBtn.addEventListener("click", open);
+  if (connBadge) connBadge.addEventListener("click", open);
+  if (closeBtn) closeBtn.addEventListener("click", close);
+  if (backdrop) backdrop.addEventListener("click", close);
+
+  if (keyToggle && keyInput) {
+    keyToggle.addEventListener("click", () => {
+      keyInput.type = keyInput.type === "password" ? "text" : "password";
+    });
+  }
+
+  if (testBtn) {
+    testBtn.addEventListener("click", async () => {
+      const typed = keyInput && keyInput.value.trim();
+      // Kaydetmeden test: typed varsa daemon'a geçici key olarak gönderilir,
+      // stored key korunur. Test başarılıysa kullanıcı "Kaydet ve Bağlan" basar.
+      await runConnectionTest(testBtn, typed || null);
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      const key = keyInput && keyInput.value.trim();
+      if (!key) {
+        showToast("Key boş", "error");
+        return;
+      }
+      saveBtn.disabled = true;
+      const orig = saveBtn.innerHTML;
+      saveBtn.innerHTML = '<span class="spinner"></span> Kaydediliyor';
+      try {
+        await daemon.setDeepgramKey(key);
+        keyInput.value = "";
+        keyInput.type = "password";
+        await runConnectionTest(testBtn);
+        await refreshConnectionStatus();
+        showToast("key kaydedildi", "success");
+        setTimeout(close, 800);
+      } catch (e) {
+        showToast(`hata: ${e.message}`, "error");
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = orig;
+      }
+    });
+  }
+
+  if (signupLink) {
+    signupLink.addEventListener("click", () => showToast("console.deepgram.com", ""));
+  }
+  if (getKeyLink) {
+    getKeyLink.addEventListener("click", () => showToast("console.deepgram.com", ""));
+  }
+}
+
+async function runConnectionTest(testBtn, tempKey = null) {
+  const card = document.getElementById("conn-status-card");
+  const stateEl = document.getElementById("conn-card-state");
+  const detailEl = document.getElementById("conn-card-detail");
+  let origLabel = null;
+  if (testBtn) {
+    testBtn.disabled = true;
+    origLabel = testBtn.innerHTML;
+    testBtn.innerHTML = '<span class="spinner"></span> test ediliyor';
+  }
+  try {
+    const res = await daemon.deepgramTest(tempKey);
+    if (card) {
+      card.classList.remove("live", "error");
+      if (res.status === "valid") {
+        card.classList.add("live");
+        if (stateEl) stateEl.textContent = tempKey ? "test başarılı · henüz kaydedilmedi" : "bağlı · nova-3 hazır";
+        if (detailEl) detailEl.textContent = tempKey
+          ? `${res.projectCount || 0} proje · "Kaydet ve Bağlan" ile saklayın`
+          : `${res.projectCount || 0} proje görüldü`;
+      } else if (res.status === "no_key") {
+        if (stateEl) stateEl.textContent = "key girilmedi";
+        if (detailEl) detailEl.textContent = "Yukarıdaki alana key yapıştır";
+      } else {
+        card.classList.add("error");
+        if (stateEl) stateEl.textContent = "geçersiz key";
+        if (detailEl) detailEl.textContent = res.message || "tekrar dene";
+      }
+    }
+  } catch (e) {
+    if (card) {
+      card.classList.remove("live");
+      card.classList.add("error");
+      if (stateEl) stateEl.textContent = "test başarısız";
+      if (detailEl) detailEl.textContent = e.message;
+    }
+  } finally {
+    if (testBtn) {
+      testBtn.disabled = false;
+      testBtn.innerHTML = origLabel || "Bağlantıyı Test Et";
+    }
+  }
+}
+
+async function refreshConnectionStatus() {
+  const badge = document.getElementById("conn-badge");
+  const badgeText = document.getElementById("conn-badge-text");
+  try {
+    const check = await daemon.check();
+    const hasKey = !!check.deepgram;
+    if (hasKey) {
+      document.body.classList.remove("no-key");
+      if (badge) {
+        badge.classList.remove("error");
+        badge.classList.add("live");
+      }
+      if (badgeText) badgeText.textContent = "deepgram · canlı";
+    } else {
+      document.body.classList.add("no-key");
+      if (badge) {
+        badge.classList.remove("live");
+        badge.classList.remove("error");
+      }
+      if (badgeText) badgeText.textContent = "key girilmedi";
+    }
+  } catch (e) {
+    document.body.classList.remove("no-key");
+    if (badge) {
+      badge.classList.remove("live");
+      badge.classList.add("error");
+    }
+    if (badgeText) badgeText.textContent = "daemon yok";
+  }
+}
+
+function showToast(message, type) {
+  const t = document.getElementById("toast");
+  if (!t) return;
+  t.textContent = message;
+  t.className = "toast";
+  if (type) t.classList.add(type);
+  void t.offsetWidth;
+  t.classList.add("show");
+  if (showToast._timer) clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+// ——— Confirmation Modal ———
+// HTML markup index.html'de sabit (#modal-backdrop + #modal-confirm).
+// Promise<boolean> döner: true = onayla, false = iptal/backdrop click.
+function showConfirm({ title, body, confirmLabel = "Devam et", cancelLabel = "İptal" } = {}) {
+  return new Promise((resolve) => {
+    const backdrop = document.getElementById("modal-backdrop");
+    const titleEl = document.getElementById("modal-title");
+    const bodyEl = document.getElementById("modal-body");
+    const okBtn = document.getElementById("modal-confirm-ok");
+    const cancelBtn = document.getElementById("modal-cancel");
+
+    if (!backdrop || !okBtn || !cancelBtn) {
+      // Fallback: modal markup yoksa onaysız geç (defensif)
+      resolve(true);
+      return;
+    }
+
+    if (title && titleEl) titleEl.textContent = title;
+    if (body && bodyEl) bodyEl.innerHTML = body;
+    okBtn.textContent = confirmLabel;
+    cancelBtn.textContent = cancelLabel;
+
+    const cleanup = (result) => {
+      backdrop.classList.remove("open");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      backdrop.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKey);
+      resolve(result);
+    };
+
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onBackdrop = (e) => { if (e.target === backdrop) cleanup(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") cleanup(false);
+      else if (e.key === "Enter") cleanup(true);
+    };
+
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    backdrop.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKey);
+
+    backdrop.classList.add("open");
+    setTimeout(() => okBtn.focus(), 280);
+  });
 }
 
 // ——— UXP Entrypoint ———

@@ -27,6 +27,14 @@ function build(totalDuration, silenceRegions, breathRegions = [], {
   paddingAfter = 0.15,
   minKeepDuration = 0.3,
 } = {}) {
+  // NaN/Infinity guard — UXP slider dönüşlerinde bozuk değerler çıkabildiği için
+  // segment-builder son savunma hatti olarak kendi default'larina dusurur.
+  if (!isFinite(paddingBefore) || paddingBefore < 0) paddingBefore = 0.15;
+  if (!isFinite(paddingAfter) || paddingAfter < 0) paddingAfter = 0.15;
+  if (!isFinite(minKeepDuration) || minKeepDuration < 0) minKeepDuration = 0.3;
+  if (!isFinite(totalDuration) || totalDuration <= 0) {
+    return { keep: [], remove: [], stats: { totalDuration: 0, totalKeep: 0, totalRemove: 0, silenceCount: 0, breathCount: 0, segmentCount: 0, reductionPercent: 0 } };
+  }
   // Tum "remove" bolgelerini birlestir (sessizlik + nefes)
   let removeRanges = [
     ...silenceRegions.map(r => ({ start: r.start, end: r.end })),
@@ -60,6 +68,19 @@ function build(totalDuration, silenceRegions, breathRegions = [], {
     };
   }).filter(r => r && r.end > r.start);
 
+  // Komsu remove araliklarini birlestir: padding sonrasi cok yakin kalan iki
+  // silence arasinda (minKeepDuration'dan kisa) aslinda anlamli konusma yok;
+  // padding buffer'i olarak kabul edip tek remove yap. Boylece timeline'da
+  // kopuk kucuk keep parcalari olusmaz.
+  for (let i = 0; i < removeRanges.length - 1; i++) {
+    const gap = removeRanges[i + 1].start - removeRanges[i].end;
+    if (gap < minKeepDuration) {
+      removeRanges[i] = { start: removeRanges[i].start, end: removeRanges[i + 1].end };
+      removeRanges.splice(i + 1, 1);
+      i--;
+    }
+  }
+
   // Keep bolgelerini hesapla (remove'un tersi)
   const keepRanges = [];
   let cursor = 0;
@@ -76,7 +97,7 @@ function build(totalDuration, silenceRegions, breathRegions = [], {
     keepRanges.push({ start: cursor, end: totalDuration });
   }
 
-  // Cok kisa keep bolgelerini filtrele
+  // Cok kisa keep bolgelerini filtrele (artik merge sonrasi nadir kalir)
   const filteredKeep = keepRanges.filter(r => (r.end - r.start) >= minKeepDuration);
 
   // Segment nesnelerine cevir

@@ -3,7 +3,10 @@
  * UXP'de localStorage mevcut
  */
 
-const STORAGE_KEY = "premierecut-settings-v1";
+// v1 → v2 migration: language default "tr" oldu, subtitleOffsetMs eklendi.
+// Yeni key'e gecince localStorage'daki eski ayarlar devre disi kalir ve kullanici
+// "Sifirla" butonuna basmaya gerek kalmadan yeni default'lari alir.
+const STORAGE_KEY = "premierseyo-settings-v2";
 
 const DEFAULTS = {
   silenceThreshold: -40,
@@ -13,13 +16,13 @@ const DEFAULTS = {
   detectBreaths: true,
   minKeepDuration: 0.3,
 
-  language: "auto",
-  whisperModel: "large-v3",
+  language: "tr",
+  subtitleOffsetMs: 0,  // auto-offset varsayılan; slider sadece ince ayar için
   maxLinesPerSub: 2,
   maxWordsPerLine: 6,
   maxCharsPerLine: 42,
   maxSubDuration: 5,
-  minSubDuration: 1,
+  minSubDuration: 0,
   cpsLimit: 20,
   splitOnSentence: true,
   splitOnPause: true,

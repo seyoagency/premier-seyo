@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.seyoweb.premierecut.daemon</string>
+  <string>com.seyoweb.premierseyo.daemon</string>
 
   <key>ProgramArguments</key>
   <array>
@@ -15,7 +15,7 @@
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>PREMIERECUT_PORT</key>
+    <key>PREMIERSEYO_PORT</key>
     <string>53117</string>
   </dict>
 
@@ -29,10 +29,10 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>__HOME__/Library/Logs/premierecut-daemon.log</string>
+  <string>__HOME__/Library/Logs/premierseyo-daemon.log</string>
 
   <key>StandardErrorPath</key>
-  <string>__HOME__/Library/Logs/premierecut-daemon.error.log</string>
+  <string>__HOME__/Library/Logs/premierseyo-daemon.error.log</string>
 
   <key>WorkingDirectory</key>
   <string>__WORKDIR__</string>

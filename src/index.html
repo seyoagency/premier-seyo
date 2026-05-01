@@ -2,170 +2,538 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <style id="inline-styles">/* PremiereCut — UXP-uyumlu sade tasarim (Flex tabanli, Grid yok) */
+  <style id="inline-styles">/* =========================================================================
+   PremierSEYO — UXP Panel
+   Studio audio-engineering aesthetic: monolithic dark + acid-lime accent.
+   Display: Bricolage Grotesque · Body: Geist · Mono: Geist Mono
+   ========================================================================= */
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700;12..96,800&family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap");
+
+/* ---------- Tokens ---------- */
+:root {
+  /* Surface scale (each step ~6% lift) */
+  --surface-0: #07070a;
+  --surface-1: #0e0e12;
+  --surface-2: #15151b;
+  --surface-3: #1c1c24;
+  --surface-4: #25252e;
+  --surface-elevated: #1a1a22;
+
+  /* Borders */
+  --line-soft: rgba(255, 255, 255, 0.04);
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.12);
+
+  /* Text */
+  --ink-100: #f8f8f4;
+  --ink-200: #d6d6d0;
+  --ink-300: #9a9a92;
+  --ink-400: #62625c;
+  --ink-500: #3f3f3a;
+
+  /* Accent — acid lime, audio-tech */
+  --accent: #d4ff3a;
+  --accent-warm: #b8e317;
+  --accent-glow: rgba(212, 255, 58, 0.18);
+  --accent-glow-soft: rgba(212, 255, 58, 0.08);
+  --accent-ink: #0a0a05;
+
+  /* Semantic */
+  --success: #6effa3;
+  --warning: #ffc34a;
+  --danger: #ff5e5e;
+
+  /* Typography */
+  --font-display: "Bricolage Grotesque", "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  --font-body: "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", "Menlo", monospace;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Layout */
+  --pad: 16px;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+
+/* ---------- Reset ---------- */
+*,
+*::before,
+*::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  font-family: -apple-system, "SF Pro Text", sans-serif;
-  font-size: 12px;
-  color: #d8d8d8;
-  background: #232323;
-  line-height: 1.4;
-  width: 100%;
   height: 100vh;
+  width: 100%;
   overflow: hidden;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-feature-settings: "ss01", "cv11", "tnum";
+  color: var(--ink-200);
+  background: var(--surface-0);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
-.tabs, .status-bar { flex-shrink: 0; }
+/* Subtle radial atmosphere — top-left acid glow */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -40% -40% 60% 0;
+  background: radial-gradient(60% 50% at 18% 12%, var(--accent-glow-soft), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
 
-/* Tabs */
-.tabs {
+/* Grain overlay (oscilloscope analog feeling) */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.35;
+  z-index: 1;
+}
+
+body > * { position: relative; z-index: 2; }
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 4px;
+  border: 2px solid var(--surface-0);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--surface-4); }
+
+/* ---------- Header ---------- */
+.app-header {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: row;
-  background: #1a1a1a;
-  border-bottom: 1px solid #000;
-  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-0) 100%);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.brand-mark svg { width: 100%; height: 100%; }
+
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--ink-100);
+  line-height: 1;
+}
+.brand-name .brand-name-accent { color: var(--accent); }
+
+.brand-tag {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--ink-400);
+  text-transform: uppercase;
+  margin-top: 3px;
+  display: block;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Connection badge — live API status */
+.conn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease-out), color 0.18s var(--ease-out);
+}
+.conn-badge:hover { border-color: var(--line-strong); color: var(--ink-200); }
+.conn-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-400);
+  position: relative;
+}
+.conn-badge.live .dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.conn-badge.live { color: var(--accent); border-color: rgba(212, 255, 58, 0.25); }
+.conn-badge.error .dot { background: var(--danger); }
+.conn-badge.error { color: var(--danger); border-color: rgba(255, 94, 94, 0.3); }
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent-glow); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-300);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.18s var(--ease-out);
+}
+.icon-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-3);
+}
+.icon-btn svg { width: 14px; height: 14px; }
+
+/* ---------- Tabs ---------- */
+.tabs {
+  flex-shrink: 0;
+  display: flex;
+  padding: 10px 14px 0;
+  gap: 4px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-0);
 }
 
 .tab {
-  flex: 1 1 50%;
-  padding: 12px 8px;
+  flex: 1;
+  padding: 9px 10px 11px;
   border: 0;
-  background: transparent;
-  color: #888;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
+  background: transparent !important;
+  -webkit-appearance: none;
+  appearance: none;
+  color: var(--ink-400);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  text-align: center;
+  position: relative;
+  outline: none;
+  transition: color 0.16s var(--ease-out), background-color 0.16s var(--ease-out);
 }
-
-.tab:hover { color: #ccc; background: #252525; }
+.tab::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  height: 2px;
+  width: 0;
+  background: var(--accent);
+  opacity: 0;
+  transition: width 0.28s var(--ease-out), opacity 0.18s var(--ease-out), left 0.28s var(--ease-out);
+  border-radius: 2px;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.tab:hover { color: var(--ink-200); background: rgba(255, 255, 255, 0.02) !important; }
 .tab.active {
-  color: #5b9bd5;
-  border-bottom-color: #5b9bd5;
-  background: #2a2a2a;
+  color: var(--accent);
+  background: linear-gradient(180deg, transparent 0%, var(--accent-glow-soft) 100%) !important;
+}
+.tab.active::after {
+  width: 70%;
+  left: 15%;
+  opacity: 1;
 }
 
+/* ---------- Status bar ---------- */
+.status-bar {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-400);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.status-bar::before {
+  content: "▸";
+  color: var(--accent);
+  font-size: 10px;
+}
+.status-bar.error { color: var(--danger); }
+.status-bar.error::before { color: var(--danger); content: "✕"; }
+.status-bar.success { color: var(--accent); }
+.status-bar.success::before { color: var(--accent); content: "●"; }
+
+/* ---------- Tab content ---------- */
 .tab-content {
-  padding: 14px;
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  padding: 18px 16px 24px;
+  animation: contentEnter 0.42s var(--ease-out) both;
 }
 
-/* Section */
-.section { margin-bottom: 16px; }
+@keyframes contentEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Onboarding (empty state, no API key) ---------- */
+.onboarding {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  flex: 1;
+  animation: contentEnter 0.5s var(--ease-out) both;
+}
+body.no-key .onboarding { display: flex; }
+body.no-key .tabs,
+body.no-key .tab-content { display: none; }
+
+.onboarding-glyph {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: linear-gradient(140deg, var(--surface-3), var(--surface-2));
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-glow), 0 18px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  position: relative;
+}
+.onboarding-glyph svg { width: 28px; height: 28px; color: var(--accent); }
+
+.onboarding-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.onboarding-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink-100);
+  margin-bottom: 10px;
+  max-width: 320px;
+}
+
+.onboarding-desc {
+  font-size: 12px;
+  color: var(--ink-300);
+  max-width: 320px;
+  line-height: 1.55;
+  margin-bottom: 22px;
+}
+
+.onboarding .btn { max-width: 240px; }
+
+.onboarding-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--line-strong);
+  padding-bottom: 2px;
+  cursor: pointer;
+}
+.onboarding-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ---------- Section ---------- */
+.section {
+  margin-bottom: 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 14px 14px 12px;
+  transition: border-color 0.18s var(--ease-out);
+}
+.section:hover { border-color: var(--line); }
 
 .section-title {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  color: #666;
-  margin-bottom: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-display);
   font-weight: 700;
-  display: block;
-  width: 100%;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-200);
+}
+.section-title::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
 }
 
-/* ─── Slider Row (Flex) ─── */
+/* Quick reset button inside section title */
+.reset-btn {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--ink-400);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.16s var(--ease-out);
+}
+.reset-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow-soft);
+}
+
+/* ---------- Row (slider/select/stepper container) ---------- */
 .row {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  margin-bottom: 12px;
-  gap: 10px;
+  gap: 12px;
+  margin-bottom: 10px;
   width: 100%;
 }
+.row:last-child { margin-bottom: 0; }
 
 .row > label {
   flex: 0 0 90px;
   font-size: 11px;
-  color: #aaa;
   font-weight: 500;
+  color: var(--ink-300);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.row > input[type="range"] {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 20px;
-  padding: 8px 0;
-  background: transparent;
-  -webkit-appearance: none;
-  appearance: none;
-  outline: none;
-  cursor: pointer;
+.row > label.label-wide { flex: 0 0 145px; }
+.label-hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-400);
+  font-weight: 400;
+  margin-left: 4px;
+  opacity: 0.75;
+  letter-spacing: 0.04em;
 }
 
-.row > input[type="range"]::-webkit-slider-runnable-track {
-  height: 8px;
-  background-color: #1a1a1a;
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0,
-    transparent calc(10% - 1px),
-    #4a4a4a calc(10% - 1px),
-    #4a4a4a 10%
-  );
-  border-radius: 4px;
-  border: 1px solid #333;
+.row > .value {
+  flex: 0 0 56px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-100);
+  font-feature-settings: "tnum";
+  letter-spacing: -0.01em;
 }
 
-.row > input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #5b9bd5;
-  cursor: pointer;
-  border: 2px solid #1a1a1a;
-  margin-top: -7px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-}
-
-.row > input[type="range"]:hover::-webkit-slider-thumb {
-  background: #6fb2ec;
-}
-
-/* Custom div-based slider (UXP range input bug bypass) */
+/* ---------- Custom slider (.cslider) ---------- */
 .cslider {
   --percent: 50%;
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  height: 22px;
-  padding: 8px 0;
-  background: transparent;
+  height: 26px;
   cursor: pointer;
   user-select: none;
   touch-action: none;
-  box-sizing: border-box;
 }
 
+/* track */
 .cslider::before {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 6px;
+  inset: 50% 0 auto 0;
+  height: 4px;
   transform: translateY(-50%);
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 4px;
+  background: var(--surface-3);
+  border-radius: 2px;
+}
+
+/* tick marks (oscilloscope reference) */
+.cslider::after {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 2px) 0 auto 0;
+  height: 4px;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(10% - 1px),
+    rgba(255, 255, 255, 0.05) calc(10% - 1px),
+    rgba(255, 255, 255, 0.05) 10%
+  );
+  border-radius: 2px;
+  pointer-events: none;
 }
 
 .cslider-fill {
@@ -173,390 +541,897 @@ body {
   left: 0;
   top: 50%;
   width: var(--percent);
-  height: 6px;
+  height: 4px;
   transform: translateY(-50%);
-  background: #5b9bd5;
-  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-warm), var(--accent));
+  border-radius: 2px;
+  box-shadow: 0 0 8px var(--accent-glow);
+  z-index: 2;
 }
 
 .cslider-thumb {
   position: absolute;
   left: var(--percent);
   top: 50%;
-  width: 18px;
-  height: 18px;
-  background: #5b9bd5;
-  border: 2px solid #1a1a1a;
+  width: 14px;
+  height: 14px;
+  background: var(--ink-100);
+  border: 2px solid var(--accent);
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  box-sizing: border-box;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  box-shadow: 0 0 0 4px transparent, 0 4px 12px rgba(0, 0, 0, 0.4);
   pointer-events: none;
+  transition: box-shadow 0.18s var(--ease-out), transform 0.16s var(--ease-spring);
+  z-index: 3;
 }
 
-.cslider:hover .cslider-thumb,
+.cslider:hover .cslider-thumb {
+  box-shadow: 0 0 0 6px var(--accent-glow), 0 4px 14px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%) scale(1.06);
+}
+.cslider:focus { outline: none; }
 .cslider:focus .cslider-thumb {
-  background: #6fb2ec;
-  outline: none;
+  box-shadow: 0 0 0 6px var(--accent-glow), 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
-.cslider:focus {
-  outline: none;
-}
-
-.reset-btn {
-  float: right;
-  font-size: 9px;
-  padding: 2px 8px;
-  margin-left: 8px;
-  background: #2a2a2a;
-  color: #aaa;
-  border: 1px solid #3a3a3a;
-  border-radius: 3px;
+/* legacy native range (advanced section) — keep usable, restyled */
+.row > input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
   cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
+  outline: none;
+}
+.row > input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--surface-3);
+  border-radius: 2px;
+}
+.row > input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink-100);
+  border: 2px solid var(--accent);
+  margin-top: -5px;
+  box-shadow: 0 0 0 4px transparent;
+  transition: box-shadow 0.18s var(--ease-out);
+}
+.row > input[type="range"]:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px var(--accent-glow);
 }
 
-.reset-btn:hover {
-  background: #3a3a3a;
-  color: #fff;
-  border-color: #5b9bd5;
-}
-
-.row > .value {
-  flex: 0 0 50px;
-  text-align: right;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
-}
-
+/* ---------- Select ---------- */
 .row > select {
   flex: 1 1 auto;
-  padding: 5px 8px;
-  background: #1a1a1a;
-  color: #fff;
-  border: 1px solid #3a3a3a;
-  border-radius: 3px;
-  font-size: 11px;
+  padding: 8px 28px 8px 10px;
+  background: var(--surface-2);
+  color: var(--ink-100);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 500;
   outline: none;
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23d4ff3a' stroke-width='1.5'><polyline points='3 5 6 8 9 5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 11px;
+  transition: border-color 0.16s var(--ease-out);
+}
+.row > select:hover,
+.row > select:focus {
+  border-color: var(--accent);
+  background-color: var(--surface-3);
 }
 
+/* ---------- Stepper ---------- */
 .row > .stepper {
   flex: 1 1 auto;
   display: flex;
-  flex-direction: row;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 4px;
 }
-
-.stepper button {
-  width: 22px;
-  height: 22px;
-  border: 1px solid #444;
-  border-radius: 3px;
-  background: #2a2a2a;
-  color: #ccc;
-  font-size: 14px;
+.stepper-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-200);
+  font-family: var(--font-mono);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  transition: all 0.16s var(--ease-out);
 }
-
-.stepper .stepper-value {
-  min-width: 24px;
+.stepper-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-3);
+}
+.stepper-btn:active { transform: scale(0.94); }
+.stepper-value {
+  min-width: 28px;
   text-align: center;
+  font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 700;
-  color: #fff;
+  font-weight: 600;
+  color: var(--ink-100);
+  font-feature-settings: "tnum";
 }
 
-/* ─── Checkbox Row ─── */
+/* ---------- Checkbox row ---------- */
 .cbrow {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 9px;
+  padding: 6px 0;
+  margin-bottom: 4px;
   cursor: pointer;
-  padding: 4px 0;
 }
-
 .cbrow > input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  flex-shrink: 0;
-  accent-color: #5b9bd5;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
   cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: all 0.16s var(--ease-out);
 }
-
+.cbrow > input[type="checkbox"]:hover { border-color: var(--accent); }
+.cbrow > input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cbrow > input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 1px 0 0 4px;
+  width: 5px;
+  height: 8px;
+  border: solid var(--accent-ink);
+  border-width: 0 1.7px 1.7px 0;
+  transform: rotate(45deg);
+}
 .cbrow > label {
-  font-size: 11px;
-  color: #ccc;
+  font-size: 11.5px;
+  color: var(--ink-200);
   cursor: pointer;
   user-select: none;
+  font-weight: 400;
 }
 
-/* ─── Buttons ─── */
+/* ---------- Buttons ---------- */
 .btn {
-  display: block;
-  width: 100%;
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: 8px;
-  text-align: center;
-}
-
-.btn-primary { background: #5b9bd5; color: white; }
-.btn-primary:hover { background: #7badd9; }
-.btn-primary:disabled { opacity: 0.5; cursor: wait; }
-
-.btn-success { background: #4caf50; color: white; }
-.btn-success:hover { background: #66bb6a; }
-
-/* ─── Results Panel ─── */
-.results {
-  background: #1c1c1c;
-  border: 1px solid #333;
-  border-radius: 5px;
-  padding: 12px;
-  margin-top: 14px;
-}
-
-.results-header {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: #888;
-  margin-bottom: 12px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #2a2a2a;
-}
-
-/* Stats — Flex tabanli kart grid */
-.stats-grid {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-bottom: 10px;
-}
-
-.stat-card {
-  flex: 1 1 calc(50% - 4px);
-  min-width: 0;
-  background: #252525;
-  border-radius: 4px;
-  padding: 8px 10px;
-}
-
-.stat-card .stat-label {
-  font-size: 9px;
-  text-transform: uppercase;
-  color: #777;
-  letter-spacing: 0.5px;
-  margin-bottom: 3px;
-  font-weight: 600;
-}
-
-.stat-card .stat-value {
-  font-size: 18px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+  font-size: 12.5px;
   font-weight: 700;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  margin-top: 12px;
+  text-align: center;
+  transition: transform 0.18s var(--ease-out), box-shadow 0.22s var(--ease-out);
+  position: relative;
+  overflow: hidden;
+}
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.18) 50%, transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 0.6s var(--ease-out);
+  pointer-events: none;
+}
+.btn:hover::after { transform: translateX(100%); }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 18px var(--accent-glow);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px var(--accent), 0 10px 28px var(--accent-glow);
+}
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
 }
 
-.stat-card.danger .stat-value { color: #ff7070; }
-.stat-card.success .stat-value { color: #66bb6a; }
-.stat-card.accent .stat-value { color: #5b9bd5; font-size: 22px; }
+.btn-success {
+  background: linear-gradient(180deg, var(--accent), var(--accent-warm));
+  color: var(--accent-ink);
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 22px var(--accent-glow);
+}
+.btn-success:hover { transform: translateY(-1px); }
 
-/* Waveform */
-.waveform {
-  height: 28px;
-  margin: 12px 0;
+.btn-ghost {
+  background: var(--surface-2);
+  color: var(--accent);
+  border: 1px solid rgba(212, 255, 58, 0.32);
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.btn-ghost:hover {
+  border-color: var(--accent);
+  background: var(--accent-glow-soft);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px var(--accent-glow);
+  transform: translateY(-1px);
+}
+.btn-ghost:active { transform: translateY(0); }
+.btn-ghost:disabled { opacity: 0.5; cursor: wait; transform: none; }
+
+/* ---------- Inputs (API key, etc.) ---------- */
+.field {
   display: flex;
-  flex-direction: row;
-  border-radius: 3px;
-  overflow: hidden;
-  background: #0a0a0a;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.field-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.field-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.field-input {
+  flex: 1;
+  width: 100%;
+  padding: 11px 38px 11px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-100);
+  outline: none;
+  letter-spacing: 0.01em;
+  transition: border-color 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
+}
+.field-input::placeholder { color: var(--ink-500); letter-spacing: 0.04em; }
+.field-input:hover { border-color: var(--line-strong); }
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow-soft);
+  background: var(--surface-3);
 }
 
-.waveform-segment {
-  height: 100%;
-  display: block;
+.field-toggle {
+  position: absolute;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 0;
+  color: var(--ink-300);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.16s var(--ease-out);
+}
+.field-toggle:hover { color: var(--accent); }
+.field-toggle svg { width: 14px; height: 14px; }
+
+.field-hint {
+  font-size: 10.5px;
+  color: var(--ink-400);
+  line-height: 1.5;
+}
+.field-hint a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+.field-hint a:hover { border-bottom-style: solid; }
+
+/* ---------- Drawer (settings panel) ---------- */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 50;
+  pointer-events: none;
+  transition: background 0.28s var(--ease-out);
+}
+.drawer-backdrop.open {
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  backdrop-filter: blur(2px);
 }
 
-.waveform-segment.keep { background: #4caf50; opacity: 0.85; }
-.waveform-segment.remove { background: #ff5252; opacity: 0.7; }
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 92%);
+  background: var(--surface-1);
+  border-left: 1px solid var(--line);
+  z-index: 51;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(102%);
+  transition: transform 0.36s var(--ease-out);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.5);
+}
+.drawer.open { transform: translateX(0); }
 
-/* Progress */
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.drawer-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--ink-100);
+}
+.drawer-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-300);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.16s var(--ease-out);
+}
+.drawer-close:hover { color: var(--danger); border-color: var(--danger); }
+.drawer-close svg { width: 14px; height: 14px; }
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.drawer-section-title {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.drawer-section-title::before {
+  content: "";
+  width: 14px;
+  height: 1px;
+  background: var(--accent);
+  display: inline-block;
+}
+
+/* Connection state inside drawer */
+.conn-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  transition: border-color 0.18s var(--ease-out);
+}
+.conn-card.live { border-color: var(--accent); background: var(--accent-glow-soft); }
+.conn-card.error { border-color: var(--danger); }
+
+.conn-card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-400);
+  flex-shrink: 0;
+  position: relative;
+}
+.conn-card.live .conn-card-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.conn-card.error .conn-card-dot { background: var(--danger); }
+
+.conn-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.conn-card-state {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.conn-card.live .conn-card-state { color: var(--accent); }
+.conn-card.error .conn-card-state { color: var(--danger); }
+.conn-card-detail { font-size: 11.5px; color: var(--ink-200); }
+
+/* ---------- Progress ---------- */
 .progress-container {
-  background: #1a1a1a;
-  border-radius: 5px;
-  padding: 10px 12px;
-  margin-top: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
 }
-
 .progress-bar {
-  height: 5px;
-  background: #0a0a0a;
-  border-radius: 3px;
+  height: 4px;
+  background: var(--surface-3);
+  border-radius: 2px;
   overflow: hidden;
+  position: relative;
 }
-
 .progress-fill {
   height: 100%;
-  background: #5b9bd5;
+  background: linear-gradient(90deg, var(--accent-warm), var(--accent));
   width: 0%;
-  transition: width 0.3s ease;
+  transition: width 0.3s var(--ease-out);
+  position: relative;
 }
-
+.progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
 .progress-text {
-  margin-top: 6px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: #999;
+  letter-spacing: 0.06em;
+  color: var(--ink-300);
   text-align: center;
 }
 
-/* Status bar — tabs altinda her zaman gorunur */
-.status-bar {
-  padding: 6px 14px;
-  font-size: 10px;
-  color: #888;
-  background: #1a1a1a;
-  border-bottom: 1px solid #000;
-  font-weight: 500;
+/* ---------- Results ---------- */
+.results {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  animation: contentEnter 0.36s var(--ease-out) both;
+}
+.results-header {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-200);
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.results-header::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 50%;
 }
 
-.status-bar.error { color: #ff7070; background: #2a1818; }
-.status-bar.success { color: #66bb6a; background: #182a1a; }
+.stats-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.stat-card {
+  flex: 1 1 calc(50% - 3px);
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  transition: border-color 0.16s var(--ease-out);
+}
+.stat-card:hover { border-color: var(--line); }
+.stat-card .stat-label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin-bottom: 4px;
+}
+.stat-card .stat-value {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink-100);
+  font-feature-settings: "tnum";
+  line-height: 1.05;
+}
+.stat-card.danger .stat-value { color: var(--danger); }
+.stat-card.success .stat-value { color: var(--accent); }
+.stat-card.accent {
+  background: var(--accent-glow-soft);
+  border-color: rgba(212, 255, 58, 0.25);
+}
+.stat-card.accent .stat-value { color: var(--accent); font-size: 24px; }
+.stat-card.accent .stat-label { color: var(--accent); }
 
+/* Waveform — keep/remove mosaic */
+.waveform {
+  height: 24px;
+  margin: 12px 0;
+  display: flex;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-0);
+  border: 1px solid var(--line-soft);
+}
+.waveform-segment { height: 100%; }
+.waveform-segment.keep { background: var(--accent); opacity: 0.92; }
+.waveform-segment.remove {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--surface-3),
+    var(--surface-3) 4px,
+    var(--surface-2) 4px,
+    var(--surface-2) 8px
+  );
+}
 
-/* Collapsible */
+/* Info banner */
+.info-banner {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--ink-300);
+  line-height: 1.55;
+}
+
+/* ---------- Collapsible (advanced settings) ---------- */
 .collapsible-header {
   cursor: pointer;
-  padding: 6px 0;
-  font-size: 11px;
-  color: #888;
+  padding: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-300);
   user-select: none;
   display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  transition: color 0.16s var(--ease-out);
 }
-
-.collapsible-header:hover { color: #ccc; }
-
+.collapsible-header:hover { color: var(--accent); }
+.collapsible-header > span:first-child {
+  display: inline-block;
+  transition: transform 0.24s var(--ease-out);
+  font-size: 9px;
+  color: var(--accent);
+}
+.collapsible-header.open > span:first-child { transform: rotate(90deg); }
 .collapsible-body {
-  padding: 8px 0 0 14px;
-  border-left: 2px solid #333;
+  padding: 10px 0 0 16px;
+  border-left: 1px solid var(--line);
   margin-left: 4px;
   margin-top: 6px;
 }
 
-/* SRT Preview */
+/* ---------- SRT preview ---------- */
 .srt-preview {
-  background: #0a0a0a;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
-  padding: 10px;
+  background: var(--surface-0);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px;
   margin-top: 8px;
   max-height: 240px;
   overflow-y: auto;
-  font-family: "SF Mono", "Menlo", monospace;
-  font-size: 10px;
-  line-height: 1.6;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+.srt-preview .srt-index {
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.srt-preview .srt-time {
+  color: var(--ink-400);
+  font-size: 9.5px;
+  display: block;
+  margin-top: 1px;
+}
+.srt-preview .srt-text {
+  color: var(--ink-100);
+  display: block;
+  margin-top: 3px;
+  margin-bottom: 8px;
 }
 
-.srt-preview .srt-index { color: #5b9bd5; font-weight: 700; }
-.srt-preview .srt-time { color: #666; font-size: 9px; display: block; }
-.srt-preview .srt-text { color: #fff; display: block; margin-top: 2px; margin-bottom: 6px; }
-
-/* Format row */
+/* Format row (SRT/VTT checkboxes) */
 .format-row {
   display: flex;
-  flex-direction: row;
   gap: 18px;
 }
-
 .format-row .cbrow { margin-bottom: 0; }
 
-/* Dependency check */
+/* ---------- Dependency check (compact, tucked into AUTO-CUT top) ---------- */
 .dep-check {
-  background: #2a1818;
-  border: 1px solid #4a2828;
-  border-radius: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 10px 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   margin-bottom: 14px;
-  font-size: 11px;
-  color: #ff9a9a;
+  font-size: 10.5px;
 }
-
 .dep-check .dep-item {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-300);
+}
+.dep-icon {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-500);
+  font-size: 0;
+}
+.dep-icon.ok { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+.dep-icon.fail { background: var(--danger); }
+
+/* ---------- Modal (confirmation dialog) ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 60;
+  pointer-events: none;
+  transition: background 0.24s var(--ease-out);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-backdrop.open {
+  background: rgba(0, 0, 0, 0.7);
+  pointer-events: auto;
+  backdrop-filter: blur(4px);
 }
 
-.dep-icon { font-weight: bold; }
-.dep-icon.ok { color: #66bb6a; }
-.dep-icon.fail { color: #ff7070; }
-
-/* Info banner */
-.info-banner {
-  background: #18222a;
-  border-left: 3px solid #5b9bd5;
-  padding: 8px 12px;
-  margin: 10px 0;
-  font-size: 10px;
-  color: #aac;
-  border-radius: 3px;
-  line-height: 1.5;
+.modal {
+  position: relative;
+  z-index: 61;
+  width: min(420px, 100%);
+  max-height: 85vh;
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 195, 74, 0.16);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 0.22s var(--ease-out), transform 0.34s var(--ease-spring);
 }
+.modal-backdrop.open .modal {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.modal-icon {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  margin: 24px auto 6px;
+  border-radius: 16px;
+  background: linear-gradient(140deg, var(--surface-3), var(--surface-2));
+  border: 1px solid rgba(255, 195, 74, 0.45);
+  box-shadow: 0 0 0 4px rgba(255, 195, 74, 0.1), 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-icon svg { width: 24px; height: 24px; color: var(--warning); }
+
+.modal-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  text-align: center;
+  color: var(--ink-100);
+  padding: 8px 24px 4px;
+  letter-spacing: -0.01em;
+}
+
+.modal-body {
+  padding: 6px 24px 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-200);
+  text-align: center;
+}
+.modal-body strong { color: var(--warning); font-weight: 600; }
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface-0);
+}
+.modal-actions .btn { margin-top: 0; flex: 1; padding: 11px 12px; font-size: 11.5px; }
+
+/* ---------- Toast (transient feedback) ---------- */
+.toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translate(-50%, 24px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-100);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 100;
+  transition: opacity 0.22s var(--ease-out), transform 0.32s var(--ease-out);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.success { border-color: var(--accent); color: var(--accent); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+
+/* ---------- Spinner (test connection, etc.) ---------- */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
+  <!-- App header: brand + live API status + settings -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="25" height="25" rx="7" stroke="#d4ff3a" stroke-width="1.4" />
+          <path d="M6 14h2v3M9 11v8M12 8v12M15 11v8M18 13v3M21 14h2" stroke="#d4ff3a" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+      </span>
+      <div>
+        <span class="brand-name">premier<span class="brand-name-accent">·</span>seyo</span>
+        <span class="brand-tag">audio · cut · caption</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="conn-badge" id="conn-badge" type="button" title="Deepgram bağlantı durumu">
+        <span class="dot"></span>
+        <span id="conn-badge-text">bağlanıyor</span>
+      </button>
+      <button class="icon-btn" id="btn-settings" type="button" title="Ayarlar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab active" data-tab="autocut">AUTO-CUT</button>
-    <button class="tab" data-tab="autosrt">AUTO-SRT</button>
+    <button class="tab active" data-tab="autocut">AUTO·CUT</button>
+    <button class="tab" data-tab="autosrt">AUTO·SRT</button>
   </div>
 
   <!-- Status bar (top, always visible) -->
-  <div class="status-bar" id="status-bar">PremierSEYO v1.0 - Hazir</div>
+  <div class="status-bar" id="status-bar">hazır · sequence bekleniyor</div>
+
+  <!-- Onboarding (visible when no API key configured) -->
+  <div class="onboarding" id="onboarding">
+    <div class="onboarding-glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+      </svg>
+    </div>
+    <div class="onboarding-eyebrow">başlangıç · 1 dakika</div>
+    <h1 class="onboarding-title">Deepgram API key ile bağlan.</h1>
+    <p class="onboarding-desc">Ses analizi (transkripsiyon + sessiz alan tespiti) tek bir Deepgram Nova-3 isteğinde yapılır. Yeni hesaplar 200&nbsp;USD ücretsiz kredi alır.</p>
+    <button class="btn btn-primary" id="btn-onboarding-open" type="button">Key Gir</button>
+    <a class="onboarding-link" id="link-deepgram-signup">console.deepgram.com</a>
+  </div>
 
   <!-- AUTO-CUT Tab -->
   <div class="tab-content" id="tab-autocut">
 
     <div class="dep-check" id="dep-check-cut" style="display:none;">
-      <div class="dep-item">
-        <span class="dep-icon" id="dep-ffmpeg-icon">-</span>
-        <span>FFmpeg</span>
-      </div>
-      <div class="dep-item">
-        <span class="dep-icon" id="dep-whisper-icon">-</span>
-        <span>whisper-cli</span>
-      </div>
-      <div class="dep-item">
-        <span class="dep-icon" id="dep-model-icon">-</span>
-        <span>Whisper Model</span>
-      </div>
+      <div class="dep-item"><span class="dep-icon" id="dep-ffmpeg-icon">-</span><span>FFmpeg</span></div>
+      <div class="dep-item"><span class="dep-icon" id="dep-whisper-icon">-</span><span>Deepgram</span></div>
+      <div class="dep-item"><span class="dep-icon" id="dep-model-icon">-</span><span>Nova-3</span></div>
     </div>
 
     <div class="section">
@@ -603,7 +1478,10 @@ body {
       <div class="collapsible-body" id="advanced-cut-body" style="display:none;">
         <div class="row">
           <label>Min. Konusma</label>
-          <input type="range" id="minKeepDuration" min="0.1" max="1.0" value="0.3" step="0.05" />
+          <div class="cslider" id="minKeepDuration" data-min="0.1" data-max="1.0" data-step="0.05" data-value="0.3" role="slider" tabindex="0">
+            <div class="cslider-fill"></div>
+            <div class="cslider-thumb"></div>
+          </div>
           <span class="value" id="minKeepDuration-val">0.3s</span>
         </div>
       </div>
@@ -648,10 +1526,7 @@ body {
   <div class="tab-content" id="tab-autosrt" style="display:none;">
 
     <div class="dep-check" id="dep-check-srt" style="display:none;">
-      <div class="dep-item">
-        <span class="dep-icon">-</span>
-        <span>Whisper kontrol ediliyor...</span>
-      </div>
+      <div class="dep-item"><span class="dep-icon">-</span><span>Deepgram bağlanıyor</span></div>
     </div>
 
     <div class="section">
@@ -671,14 +1546,12 @@ body {
       </div>
 
       <div class="row">
-        <label>Model</label>
-        <select id="srt-model">
-          <option value="large-v3">large-v3</option>
-          <option value="medium">medium</option>
-          <option value="small">small</option>
-          <option value="base">base</option>
-        </select>
-        <span></span>
+        <label>Altyazi Ofseti</label>
+        <div class="cslider" id="subtitleOffset" data-min="-500" data-max="500" data-step="10" data-value="0" role="slider" tabindex="0">
+          <div class="cslider-fill"></div>
+          <div class="cslider-thumb"></div>
+        </div>
+        <span class="value" id="subtitleOffset-val">0ms</span>
       </div>
     </div>
 
@@ -686,7 +1559,7 @@ body {
       <div class="section-title">Altyazi Bicimi</div>
 
       <div class="row">
-        <label>Satir/Altyazi</label>
+        <label class="label-wide">Altyazı satır sayısı <span class="label-hint">(1-3)</span></label>
         <div class="stepper">
           <button class="stepper-btn" data-target="maxLinesPerSub" data-dir="-1">-</button>
           <span class="stepper-value" id="maxLinesPerSub-val">2</span>
@@ -696,7 +1569,7 @@ body {
       </div>
 
       <div class="row">
-        <label>Kelime/Satir</label>
+        <label class="label-wide">Satır başına kelime <span class="label-hint">(2-12)</span></label>
         <div class="stepper">
           <button class="stepper-btn" data-target="maxWordsPerLine" data-dir="-1">-</button>
           <span class="stepper-value" id="maxWordsPerLine-val">6</span>
@@ -714,17 +1587,26 @@ body {
       <div class="collapsible-body" id="advanced-srt-body" style="display:none;">
         <div class="row">
           <label>Max sure</label>
-          <input type="range" id="maxSubDuration" min="2" max="10" value="5" step="0.5" />
+          <div class="cslider" id="maxSubDuration" data-min="2" data-max="10" data-step="0.5" data-value="5" role="slider" tabindex="0">
+            <div class="cslider-fill"></div>
+            <div class="cslider-thumb"></div>
+          </div>
           <span class="value" id="maxSubDuration-val">5s</span>
         </div>
         <div class="row">
           <label>Min sure</label>
-          <input type="range" id="minSubDuration" min="0.5" max="3" value="1" step="0.5" />
-          <span class="value" id="minSubDuration-val">1s</span>
+          <div class="cslider" id="minSubDuration" data-min="0" data-max="3" data-step="0.1" data-value="0" role="slider" tabindex="0">
+            <div class="cslider-fill"></div>
+            <div class="cslider-thumb"></div>
+          </div>
+          <span class="value" id="minSubDuration-val">0.0s</span>
         </div>
         <div class="row">
           <label>CPS limiti</label>
-          <input type="range" id="cpsLimit" min="10" max="30" value="20" step="1" />
+          <div class="cslider" id="cpsLimit" data-min="10" data-max="30" data-step="1" data-value="20" role="slider" tabindex="0">
+            <div class="cslider-fill"></div>
+            <div class="cslider-thumb"></div>
+          </div>
           <span class="value" id="cpsLimit-val">20</span>
         </div>
         <div class="cbrow">
@@ -769,6 +1651,90 @@ body {
 
   </div>
 
+  <!-- Settings drawer (slides in from right) -->
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <aside class="drawer" id="drawer-settings" role="dialog" aria-labelledby="drawer-title">
+    <div class="drawer-header">
+      <span class="drawer-title" id="drawer-title">Ayarlar</span>
+      <button class="drawer-close" id="drawer-close" type="button" aria-label="Kapat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="drawer-body">
+      <div class="drawer-section">
+        <span class="drawer-section-title">Deepgram</span>
+
+        <div class="conn-card" id="conn-status-card">
+          <span class="conn-card-dot"></span>
+          <div class="conn-card-text">
+            <span class="conn-card-state" id="conn-card-state">test edilmedi</span>
+            <span class="conn-card-detail" id="conn-card-detail">Key gir, “test et” ile doğrula</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="api-key-input">API Key</label>
+          <div class="field-input-wrap">
+            <input
+              id="api-key-input"
+              class="field-input"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="dg_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            />
+            <button class="field-toggle" id="api-key-toggle" type="button" title="Göster/Gizle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <span class="field-hint">
+            <a id="link-get-key">console.deepgram.com</a> üzerinden ücretsiz hesap aç (200 USD kredi). Key sadece bu Mac'te <code>~/.config/premier-seyo/deepgram.key</code> dosyasında saklanır.
+          </span>
+        </div>
+
+        <button class="btn btn-ghost" id="btn-test-key" type="button">Bağlantıyı Test Et</button>
+        <button class="btn btn-primary" id="btn-save-key" type="button">Kaydet ve Bağlan</button>
+      </div>
+
+      <div class="drawer-section">
+        <span class="drawer-section-title">Hakkında</span>
+        <p style="font-size: 11px; color: var(--ink-300); line-height: 1.6;">
+          Sürüm 1.1 · Audio analizi <strong style="color: var(--ink-100);">Deepgram Nova-3</strong> ile yapılır. Tek API çağrısında transkripsiyon + sessizlik segmentleri döner ve daemon tarafında 1 saat cache'lenir.
+        </p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Confirm modal (Auto-Cut sequence-koruma uyarısı) -->
+  <div class="modal-backdrop" id="modal-backdrop" role="presentation">
+    <div class="modal" id="modal-confirm" role="alertdialog" aria-labelledby="modal-title" aria-describedby="modal-body">
+      <div class="modal-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <h2 class="modal-title" id="modal-title">Sequence kopyası aldın mı?</h2>
+      <p class="modal-body" id="modal-body">
+        Auto-Cut <strong>aktif sequence'i yerinde keser</strong>. Cmd+Z birden fazla undo gerektirir, tek adımda geri almıyor. Lütfen önce <strong>Project paneli'nde sequence'e sağ tık → "Duplicate"</strong> yaparak kopya al, sonra devam et.
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-cancel" type="button">İptal</button>
+        <button class="btn btn-primary" id="modal-confirm-ok" type="button">Kopya aldım, devam et</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast (transient feedback) -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 
   <script>
 (() => {
@@ -786,7 +1752,7 @@ body {
   // src/utils/config.js
   var require_config = __commonJS({
     "src/utils/config.js"(exports, module) {
-      var STORAGE_KEY = "premierecut-settings-v1";
+      var STORAGE_KEY = "premierseyo-settings-v2";
       var DEFAULTS = {
         silenceThreshold: -40,
         minSilenceDuration: 0.4,
@@ -794,13 +1760,14 @@ body {
         paddingAfter: 0.15,
         detectBreaths: true,
         minKeepDuration: 0.3,
-        language: "auto",
-        whisperModel: "large-v3",
+        language: "tr",
+        subtitleOffsetMs: 0,
+        // auto-offset varsayılan; slider sadece ince ayar için
         maxLinesPerSub: 2,
         maxWordsPerLine: 6,
         maxCharsPerLine: 42,
         maxSubDuration: 5,
-        minSubDuration: 1,
+        minSubDuration: 0,
         cpsLimit: 20,
         splitOnSentence: true,
         splitOnPause: true,
@@ -855,19 +1822,47 @@ body {
     "src/utils/daemon.js"(exports, module) {
       var DAEMON_URL = "http://127.0.0.1:53117";
       var DEFAULT_TIMEOUT = 30 * 60 * 1e3;
+      var _cachedToken = null;
+      var _cachedHome = null;
+      function readTokenSafe() {
+        if (_cachedToken) return _cachedToken;
+        try {
+          const fs = __require("fs");
+          const os = __require("os");
+          const path = __require("path");
+          const tokenPath = path.join(os.homedir(), ".config", "premier-seyo", "token");
+          const content = fs.readFileSync(tokenPath, "utf-8").trim();
+          if (content && content.length >= 32) {
+            _cachedToken = content;
+            return content;
+          }
+        } catch {
+        }
+        return null;
+      }
       async function call(path, body = null, timeoutMs = DEFAULT_TIMEOUT) {
         const url = DAEMON_URL + path;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const headers = {};
+        if (body) headers["Content-Type"] = "application/json";
+        if (path !== "/ping") headers["X-Premiere-Cut-Client"] = "premierseyo-uxp";
+        const token = path === "/ping" ? null : readTokenSafe();
+        if (token) headers["X-Premiere-Cut-Token"] = token;
         try {
           const res = await fetch(url, {
             method: body ? "POST" : "GET",
-            headers: body ? { "Content-Type": "application/json" } : {},
+            headers,
             body: body ? JSON.stringify(body) : void 0,
             signal: controller.signal
           });
           const data = await res.json();
           if (!res.ok) {
+            if (res.status === 401) {
+              throw new Error(
+                "Helper daemon yetkilendirmesi basarisiz. Daemon'u yeniden baslatin.\nKomutlar: launchctl unload ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist && launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist"
+              );
+            }
             throw new Error(data.error || `HTTP ${res.status}`);
           }
           return data;
@@ -877,7 +1872,7 @@ body {
           }
           if (err.message && err.message.includes("fetch")) {
             throw new Error(
-              "Helper daemon'a ulasilamadi. Lutfen daemon'un calistigindan emin olun.\nBaslatma komutu: launchctl load ~/Library/LaunchAgents/com.seyoweb.premierecut.daemon.plist"
+              "Helper daemon'a ulasilamadi. Lutfen daemon'un calistigindan emin olun.\nBaslatma komutu: launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist"
             );
           }
           throw err;
@@ -889,22 +1884,42 @@ body {
         return call("/ping", null, 3e3);
       }
       async function check() {
+        await ping();
         return call("/check", null, 1e4);
       }
       async function exportAudio({ inputPath, sampleRate = 48e3, mono = false, suffix = "" }) {
         return call("/export-audio", { inputPath, sampleRate, mono, suffix }, 6e5);
       }
-      async function silenceDetect({ audioPath, noiseThreshold = -35, minDuration = 0.4 }) {
-        return call("/silence-detect", { audioPath, noiseThreshold, minDuration }, 6e5);
+      async function silenceDetect({ audioPath, minDuration = 0.4, language = "tr", uttSplit = 0.8 }) {
+        return call("/silence-detect", { audioPath, minDuration, language, uttSplit }, 6e5);
       }
-      async function transcribe({ audioPath, language = "auto", model = "large-v3" }) {
-        return call("/transcribe", { audioPath, language, model }, 30 * 60 * 1e3);
+      async function transcribe({ audioPath, language = "tr", keyterm = null, uttSplit = 0.8 }) {
+        return call("/transcribe", { audioPath, language, keyterm, uttSplit }, 10 * 60 * 1e3);
       }
       async function writeFile({ filePath, content }) {
         return call("/write-file", { filePath, content }, 3e4);
       }
       async function reveal(filePath) {
         return call("/reveal", { filePath }, 5e3);
+      }
+      async function log(tag, message) {
+        try {
+          await call("/log", { tag, message }, 3e3);
+        } catch {
+        }
+      }
+      async function setDeepgramKey(key) {
+        return call("/set-deepgram-key", { key }, 5e3);
+      }
+      async function deepgramTest(tempKey = null) {
+        const body = tempKey && tempKey.length >= 20 ? { key: tempKey } : null;
+        return call("/deepgram-test", body, 12e3);
+      }
+      async function getHomeDirs() {
+        if (_cachedHome) return _cachedHome;
+        const res = await call("/home-dir", null, 5e3);
+        _cachedHome = { homeDir: res.homeDir, documentsDir: res.documentsDir };
+        return _cachedHome;
       }
       module.exports = {
         call,
@@ -915,6 +1930,10 @@ body {
         transcribe,
         writeFile,
         reveal,
+        getHomeDirs,
+        log,
+        setDeepgramKey,
+        deepgramTest,
         DAEMON_URL
       };
     }
@@ -960,10 +1979,146 @@ body {
     }
   });
 
+  // src/timeline/timeline-mapper.js
+  var require_timeline_mapper = __commonJS({
+    "src/timeline/timeline-mapper.js"(exports, module) {
+      var EPS = 1e-4;
+      function comparePriority(a, b) {
+        const trackA = Number.isFinite(a.trackIndex) ? a.trackIndex : Number.MAX_SAFE_INTEGER;
+        const trackB = Number.isFinite(b.trackIndex) ? b.trackIndex : Number.MAX_SAFE_INTEGER;
+        if (trackA !== trackB) return trackA - trackB;
+        const orderA = Number.isFinite(a.originalIndex) ? a.originalIndex : Number.MAX_SAFE_INTEGER;
+        const orderB = Number.isFinite(b.originalIndex) ? b.originalIndex : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return (a.timelineStart || 0) - (b.timelineStart || 0);
+      }
+      function flattenTimelineClips(clips) {
+        if (!Array.isArray(clips) || clips.length === 0) return [];
+        const normalized = clips.map((clip, index) => {
+          const timelineStart = Number(clip.timelineStart) || 0;
+          const duration = Number(clip.duration) || 0;
+          const sourceIn = Number(clip.sourceIn) || 0;
+          const sourceOut = Number(clip.sourceOut) || sourceIn + duration;
+          const trackIndex = Number.isFinite(Number(clip.trackIndex)) ? Number(clip.trackIndex) : Number.MAX_SAFE_INTEGER;
+          if (!clip || !clip.path || duration <= EPS) return null;
+          return {
+            ...clip,
+            timelineStart,
+            timelineEnd: timelineStart + duration,
+            duration,
+            sourceIn,
+            sourceOut,
+            trackIndex,
+            originalIndex: index
+          };
+        }).filter(Boolean);
+        if (normalized.length === 0) return [];
+        const boundaries = Array.from(new Set(
+          normalized.flatMap((clip) => [clip.timelineStart, clip.timelineEnd])
+        )).sort((a, b) => a - b);
+        const flattened = [];
+        for (let i = 0; i < boundaries.length - 1; i++) {
+          const sliceStart = boundaries[i];
+          const sliceEnd = boundaries[i + 1];
+          if (sliceEnd - sliceStart <= EPS) continue;
+          const covering = normalized.filter((clip) => clip.timelineStart < sliceEnd - EPS && clip.timelineEnd > sliceStart + EPS).sort(comparePriority);
+          if (covering.length === 0) continue;
+          const winner = covering[0];
+          const start = Math.max(sliceStart, winner.timelineStart);
+          const end = Math.min(sliceEnd, winner.timelineEnd);
+          if (end - start <= EPS) continue;
+          flattened.push({
+            path: winner.path,
+            sourceIn: winner.sourceIn + (start - winner.timelineStart),
+            sourceOut: winner.sourceIn + (end - winner.timelineStart),
+            timelineStart: start,
+            duration: end - start,
+            trackIndex: winner.trackIndex,
+            originalIndex: winner.originalIndex
+          });
+        }
+        const merged = [];
+        for (const piece of flattened) {
+          const last = merged[merged.length - 1];
+          const pieceEnd = piece.timelineStart + piece.duration;
+          if (last && last.path === piece.path && last.trackIndex === piece.trackIndex && Math.abs(last.timelineStart + last.duration - piece.timelineStart) <= EPS && Math.abs(last.sourceOut - piece.sourceIn) <= EPS) {
+            last.duration = pieceEnd - last.timelineStart;
+            last.sourceOut = piece.sourceOut;
+          } else {
+            merged.push({ ...piece });
+          }
+        }
+        return merged;
+      }
+      function splitKeepSegmentByClips(keep, clips) {
+        if (!keep || !(keep.end > keep.start)) return [];
+        if (!Array.isArray(clips) || clips.length === 0) return [];
+        const canonicalClips = flattenTimelineClips(clips);
+        return splitKeepSegmentByCanonicalClips(keep, canonicalClips);
+      }
+      function splitKeepSegmentByCanonicalClips(keep, canonicalClips) {
+        if (!keep || !(keep.end > keep.start)) return [];
+        if (!Array.isArray(canonicalClips) || canonicalClips.length === 0) return [];
+        const pieces = [];
+        for (const clip of canonicalClips) {
+          if (!clip || !clip.path) continue;
+          const timelineStart = Number(clip.timelineStart) || 0;
+          const duration = Number(clip.duration) || 0;
+          if (duration <= EPS) continue;
+          const clipEnd = timelineStart + duration;
+          const overlapStart = Math.max(keep.start, timelineStart);
+          const overlapEnd = Math.min(keep.end, clipEnd);
+          if (overlapEnd - overlapStart <= EPS) continue;
+          const sourceInBase = Number(clip.sourceIn) || 0;
+          const srcIn = sourceInBase + (overlapStart - timelineStart);
+          const srcOut = sourceInBase + (overlapEnd - timelineStart);
+          pieces.push({
+            path: clip.path,
+            sourceIn: srcIn,
+            sourceOut: srcOut,
+            timelineStart: overlapStart,
+            duration: overlapEnd - overlapStart
+          });
+        }
+        pieces.sort((a, b) => a.timelineStart - b.timelineStart);
+        return pieces;
+      }
+      function splitAllKeeps(keepSegments, clips) {
+        if (!Array.isArray(keepSegments)) return [];
+        const canonicalClips = flattenTimelineClips(clips);
+        const all = [];
+        for (const keep of keepSegments) {
+          const parts = splitKeepSegmentByCanonicalClips(keep, canonicalClips);
+          for (const p of parts) all.push(p);
+        }
+        all.sort((a, b) => a.timelineStart - b.timelineStart);
+        return all;
+      }
+      function totalPieceDuration(pieces) {
+        if (!Array.isArray(pieces)) return 0;
+        return pieces.reduce((sum, p) => sum + (p.duration || 0), 0);
+      }
+      function uniqueSourcePaths(pieces) {
+        const set = /* @__PURE__ */ new Set();
+        if (!Array.isArray(pieces)) return [];
+        for (const p of pieces) if (p && p.path) set.add(p.path);
+        return Array.from(set);
+      }
+      module.exports = {
+        flattenTimelineClips,
+        splitKeepSegmentByClips,
+        splitAllKeeps,
+        totalPieceDuration,
+        uniqueSourcePaths
+      };
+    }
+  });
+
   // src/core/audio-exporter.js
   var require_audio_exporter = __commonJS({
     "src/core/audio-exporter.js"(exports, module) {
       var daemon2 = require_daemon();
+      var timelineMapper = require_timeline_mapper();
       async function exportAudio({ sampleRate = 48e3, mono = false, suffix = "" } = {}) {
         const ppro = __require("premierepro");
         const project = await ppro.Project.getActiveProject();
@@ -979,7 +2134,7 @@ body {
           sampleRate,
           mono
         }, 6e5);
-        return res.outputPath;
+        return { outputPath: res.outputPath, clips };
       }
       async function collectSequenceClips(sequence) {
         const ppro = __require("premierepro");
@@ -990,22 +2145,22 @@ body {
         if (audioTrackCount > 0) {
           for (let i = 0; i < audioTrackCount; i++) {
             const t = await sequence.getAudioTrack(i);
-            if (t) tracks.push(t);
+            if (t) tracks.push({ track: t, trackIndex: i });
           }
         }
-        const fallbackToVideo = tracks.length === 0 || (await Promise.all(tracks.map(async (t) => {
-          const items = await t.getTrackItems(1, false);
+        const fallbackToVideo = tracks.length === 0 || (await Promise.all(tracks.map(async ({ track }) => {
+          const items = await track.getTrackItems(1, false);
           return items && items.length > 0;
         }))).every((x) => !x);
         const finalTracks = fallbackToVideo ? await (async () => {
           const r = [];
           for (let i = 0; i < videoTrackCount; i++) {
             const t = await sequence.getVideoTrack(i);
-            if (t) r.push(t);
+            if (t) r.push({ track: t, trackIndex: i });
           }
           return r;
         })() : tracks;
-        for (const track of finalTracks) {
+        for (const { track, trackIndex } of finalTracks) {
           const items = await track.getTrackItems(1, false);
           if (!items) continue;
           for (const item of items) {
@@ -1028,20 +2183,28 @@ body {
               sourceIn,
               sourceOut,
               timelineStart,
-              duration
+              duration,
+              trackIndex: Number.isFinite(trackIndex) ? trackIndex : 0
             });
           }
         }
         const unique = [];
         const seen = /* @__PURE__ */ new Set();
         for (const c of clips) {
-          const key = `${c.path}|${c.timelineStart.toFixed(3)}|${c.duration.toFixed(3)}`;
+          const key = [
+            c.path,
+            c.timelineStart.toFixed(3),
+            c.duration.toFixed(3),
+            c.sourceIn.toFixed(3),
+            c.sourceOut.toFixed(3),
+            c.trackIndex
+          ].join("|");
           if (!seen.has(key)) {
             seen.add(key);
             unique.push(c);
           }
         }
-        return unique;
+        return timelineMapper.flattenTimelineClips(unique);
       }
       module.exports = { exportAudio, collectSequenceClips };
     }
@@ -1067,8 +2230,8 @@ body {
   var require_breath_detector = __commonJS({
     "src/core/breath-detector.js"(exports, module) {
       function findBreathCandidates(silenceRegions, {
-        minDuration = 0.15,
-        maxDuration = 1.5
+        minDuration = 0.05,
+        maxDuration = 0.25
       } = {}) {
         if (silenceRegions.length < 2) return [];
         const breaths = [];
@@ -1098,6 +2261,12 @@ body {
         paddingAfter = 0.15,
         minKeepDuration = 0.3
       } = {}) {
+        if (!isFinite(paddingBefore) || paddingBefore < 0) paddingBefore = 0.15;
+        if (!isFinite(paddingAfter) || paddingAfter < 0) paddingAfter = 0.15;
+        if (!isFinite(minKeepDuration) || minKeepDuration < 0) minKeepDuration = 0.3;
+        if (!isFinite(totalDuration) || totalDuration <= 0) {
+          return { keep: [], remove: [], stats: { totalDuration: 0, totalKeep: 0, totalRemove: 0, silenceCount: 0, breathCount: 0, segmentCount: 0, reductionPercent: 0 } };
+        }
         let removeRanges = [
           ...silenceRegions.map((r) => ({ start: r.start, end: r.end })),
           ...breathRegions.map((r) => ({ start: r.start, end: r.end }))
@@ -1118,6 +2287,14 @@ body {
             end: r.end - padB
           };
         }).filter((r) => r && r.end > r.start);
+        for (let i = 0; i < removeRanges.length - 1; i++) {
+          const gap = removeRanges[i + 1].start - removeRanges[i].end;
+          if (gap < minKeepDuration) {
+            removeRanges[i] = { start: removeRanges[i].start, end: removeRanges[i + 1].end };
+            removeRanges.splice(i + 1, 1);
+            i--;
+          }
+        }
         const keepRanges = [];
         let cursor = 0;
         for (const r of removeRanges) {
@@ -1177,78 +2354,49 @@ body {
   var require_transcriber = __commonJS({
     "src/core/transcriber.js"(exports, module) {
       var daemon2 = require_daemon();
-      async function transcribe(audioPath, { language = "auto", model = "large-v3" } = {}) {
-        const res = await daemon2.transcribe({ audioPath, language, model });
-        const parsed = res.result;
-        return parseWhisperOutput(parsed);
+      async function transcribe(audioPath, { language = "tr", keyterm = null } = {}) {
+        const res = await daemon2.transcribe({ audioPath, language, keyterm });
+        return parseDeepgramOutput(res.result);
       }
-      function parseWhisperOutput(whisperJson) {
-        if (!whisperJson) return [];
-        const rawSegments = Array.isArray(whisperJson.segments) && whisperJson.segments.length > 0 ? whisperJson.segments : Array.isArray(whisperJson.transcription) ? whisperJson.transcription : [];
-        const segments = [];
-        for (const item of rawSegments) {
-          const normalized = normalizeSegment(item);
-          if (normalized && normalized.text) segments.push(normalized);
+      function parseDeepgramOutput(deepgramJson) {
+        if (!deepgramJson || !deepgramJson.results) return [];
+        const utterances = Array.isArray(deepgramJson.results.utterances) ? deepgramJson.results.utterances : [];
+        if (utterances.length > 0) {
+          return utterances.map((u) => normalizeUtterance(u)).filter((s) => s && s.text).sort((a, b) => a.start - b.start);
         }
-        return segments.sort((a, b) => a.start - b.start);
-      }
-      function normalizeSegment(item) {
-        if (!item) return null;
-        const timestamps = item.timestamps || {};
-        const start = firstNumber(
-          item.start,
-          timestamps.from,
-          item.offsets?.from
-        );
-        const end = firstNumber(
-          item.end,
-          timestamps.to,
-          item.offsets?.to
-        );
-        const words = normalizeWords(item.words || item.tokens || []);
-        const text = (item.text || words.map((w) => w.text).join(" ")).trim();
-        const wordStart = words.length ? words[0].start : start;
-        const wordEnd = words.length ? words[words.length - 1].end : end;
-        return {
-          text,
-          start: Number.isFinite(start) ? start : wordStart,
-          end: Number.isFinite(end) ? end : wordEnd,
-          words
-        };
-      }
-      function normalizeWords(rawWords) {
-        if (!Array.isArray(rawWords)) return [];
-        return rawWords.map((w) => {
-          const text = (w.text || w.word || w.token || "").trim();
-          const start = firstNumber(w.start, w.timestamps?.from, w.offsets?.from);
-          const end = firstNumber(w.end, w.timestamps?.to, w.offsets?.to);
-          if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-            return null;
+        const channels = Array.isArray(deepgramJson.results.channels) ? deepgramJson.results.channels : [];
+        const alt = channels[0] && Array.isArray(channels[0].alternatives) ? channels[0].alternatives[0] : null;
+        if (!alt || !Array.isArray(alt.words) || alt.words.length === 0) return [];
+        const words = alt.words.map(normalizeWord).filter(Boolean);
+        if (words.length === 0) return [];
+        return [
+          {
+            text: words.map((w) => w.text).join(" "),
+            start: words[0].start,
+            end: words[words.length - 1].end,
+            words
           }
-          return { text, start, end };
-        }).filter(Boolean).sort((a, b) => a.start - b.start);
+        ];
       }
-      function firstNumber(...values) {
-        for (const value of values) {
-          if (value === void 0 || value === null || value === "") continue;
-          const parsed = parseTimestamp(value);
-          if (Number.isFinite(parsed)) return parsed;
-        }
-        return NaN;
+      function normalizeUtterance(u) {
+        if (!u) return null;
+        const start = Number(u.start);
+        const end = Number(u.end);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+        const words = Array.isArray(u.words) ? u.words.map(normalizeWord).filter(Boolean) : [];
+        const text = (u.transcript || words.map((w) => w.text).join(" ")).trim();
+        return { text, start, end, words };
       }
-      function parseTimestamp(ts) {
-        if (typeof ts === "number") return ts;
-        if (!ts) return 0;
-        const parts = String(ts).replace(",", ".").split(":");
-        if (parts.length === 3) {
-          return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
-        }
-        if (parts.length === 2) {
-          return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
-        }
-        return parseFloat(ts) || 0;
+      function normalizeWord(w) {
+        if (!w) return null;
+        const text = (w.punctuated_word || w.word || "").trim();
+        const start = Number(w.start);
+        const end = Number(w.end);
+        if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+        const confidence = Number(w.confidence);
+        return Number.isFinite(confidence) ? { text, start, end, confidence } : { text, start, end };
       }
-      module.exports = { transcribe, parseWhisperOutput, parseTimestamp };
+      module.exports = { transcribe, parseDeepgramOutput };
     }
   });
 
@@ -1330,24 +2478,22 @@ body {
         return captions.map((cap, index) => {
           const charCount = cap.text.replace(/\n/g, " ").length;
           const start = Number(cap.start || 0);
-          const end = Math.max(Number(cap.end || start), start + 1e-3);
-          const dur = end - start;
-          let newEnd = end;
-          if (cpsLimit > 0 && dur > 0) {
-            const cps = charCount / dur;
+          let end = Math.max(Number(cap.end || start), start + 1e-3);
+          if (cpsLimit > 0) {
+            const duration = Math.max(end - start, 1e-3);
+            const cps = charCount / duration;
             if (cps > cpsLimit) {
-              const needDur = charCount / cpsLimit;
-              newEnd = start + needDur;
+              end = start + charCount / cpsLimit;
             }
           }
-          if (minDur > 0 && newEnd - start < minDur) {
-            newEnd = start + minDur;
+          if (minDur > 0 && end - start < minDur) {
+            end = start + minDur;
           }
           const next = captions[index + 1];
           if (next && Number.isFinite(next.start)) {
-            newEnd = Math.min(newEnd, Math.max(start + 1e-3, next.start - 1e-3));
+            end = Math.min(end, Math.max(start + 1e-3, next.start - 1e-3));
           }
-          return { ...cap, index: index + 1, start, end: Math.max(start + 1e-3, newEnd) };
+          return { ...cap, index: index + 1, start, end: Math.max(start + 1e-3, end) };
         });
       }
       module.exports = { group, applyCPSLimit };
@@ -1488,11 +2634,23 @@ ${cap.text}`;
   var require_reconstructor = __commonJS({
     "src/timeline/reconstructor.js"(exports, module) {
       var seqEditor2 = require_sequence_editor();
-      async function reconstruct(inputSequence, _removeSegments, onProgress, keepSegments) {
+      var mapper = require_timeline_mapper();
+      async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, onStage) {
         const ppro = __require("premierepro");
+        const stageLog = (msg) => {
+          if (typeof onStage === "function") onStage(msg);
+        };
         if (!keepSegments || keepSegments.length === 0) {
-          return { success: false, message: "Tutulacak bolge yok \u2014 ayarlar cok agresif (sessizlik esigi duser, min. sessizlik artir)" };
+          return { success: false, message: "Tutulacak bolge yok \u2014 ayarlar cok agresif" };
         }
+        if (!Array.isArray(clipsMeta) || clipsMeta.length === 0) {
+          return { success: false, message: "Clip metadata yok \u2014 once Analiz Et'e basin" };
+        }
+        const pieces = mapper.splitAllKeeps(keepSegments, clipsMeta);
+        if (pieces.length === 0) {
+          return { success: false, message: "Kesim icin kaynak parca bulunamadi" };
+        }
+        stageLog(`${pieces.length} parca hesaplandi`);
         let project = await ppro.Project.getActiveProject();
         if (!project) throw new Error("Aktif proje yok");
         let sequence = inputSequence;
@@ -1503,81 +2661,181 @@ ${cap.text}`;
         if (allItems.length === 0) {
           return { success: false, message: "Sequence bos" };
         }
-        const rootProjectItem = await findPrimaryProjectItem(videoItems, audioItems);
-        if (!rootProjectItem) {
-          return { success: false, message: "ProjectItem bulunamadi" };
-        }
-        const rootMediaPath = await getProjectItemMediaPath(ppro, rootProjectItem);
         const { videoTrackIdx, audioTrackIdx } = pickTargetTracks(videoItems, audioItems);
-        const mediaTypeAny = getMediaType(ppro, "ANY", 0);
+        const mediaTypeVideo = getMediaType(ppro, "VIDEO", 0);
+        const mediaTypeAudio = getMediaType(ppro, "AUDIO", 1);
+        const wantedPaths = mapper.uniqueSourcePaths(pieces);
+        const pathToItem = await resolveProjectItemsByPaths(ppro, project, wantedPaths);
+        const missing = wantedPaths.filter((p) => !pathToItem.has(p));
+        if (missing.length > 0) {
+          return {
+            success: false,
+            message: `ProjectItem bulunamadi (${missing.length} klip): ${missing[0].split("/").pop()}`
+          };
+        }
         let stage = "baslangic";
         try {
-          stage = "orijinalleri silme";
-          runActionTransaction(project, "PremierSEYO: Remove originals", () => {
-            const action = createRemoveActionForItems(ppro, editor, allItems, true, mediaTypeAny, true);
-            if (!action) throw new Error("createRemoveItemsAction null");
-            return action;
-          });
-          await new Promise((r) => setTimeout(r, 250));
-          ({ project, sequence, editor } = await refreshSequenceContext(ppro, sequence));
-          let dst = ppro.TickTime.createWithSeconds(0);
-          let successCount = 0;
-          let resolvedProjectItem = rootProjectItem;
-          let clipPI = await safeCastClipProjectItem(ppro, resolvedProjectItem);
-          if (!clipPI) {
-            throw new Error("ClipProjectItem.cast basarisiz");
+          stageLog(`Phase 1: ${videoItems.length} video + ${audioItems.length} audio item silinecek`);
+          stage = "orijinal video silme";
+          if (videoItems.length > 0) {
+            runActionTransaction(project, "PremierSEYO: Remove video originals", () => {
+              const action = createRemoveActionForItems(ppro, editor, videoItems, true, mediaTypeVideo, true);
+              if (!action) throw new Error("createRemoveItemsAction (video) null");
+              return action;
+            });
+            await new Promise((r) => setTimeout(r, 400));
+            ({ project, sequence, editor } = await refreshSequenceContext(ppro, sequence));
           }
-          for (let i = 0; i < keepSegments.length; i++) {
-            const seg = keepSegments[i];
+          stage = "orijinal audio silme";
+          if (audioItems.length > 0) {
+            runActionTransaction(project, "PremierSEYO: Remove audio originals", () => {
+              const action = createRemoveActionForItems(ppro, editor, audioItems, true, mediaTypeAudio, true);
+              if (!action) throw new Error("createRemoveItemsAction (audio) null");
+              return action;
+            });
+            await new Promise((r) => setTimeout(r, 400));
+            ({ project, sequence, editor } = await refreshSequenceContext(ppro, sequence));
+          }
+          let leftoverCount = -1;
+          let retries = 0;
+          while (retries < 6) {
+            const afterRemove = await seqEditor2.getTrackItems(sequence);
+            leftoverCount = afterRemove.videoItems.length + afterRemove.audioItems.length;
+            if (leftoverCount === 0) break;
+            stageLog(`Phase 1 retry ${retries + 1}/6: ${leftoverCount} item hala kaldi`);
+            retries++;
+            if (retries <= 3) {
+              try {
+                if (afterRemove.videoItems.length > 0) {
+                  runActionTransaction(project, `PremierSEYO: Remove leftover video (retry ${retries})`, () => {
+                    return createRemoveActionForItems(ppro, editor, afterRemove.videoItems, true, mediaTypeVideo, true);
+                  });
+                }
+                if (afterRemove.audioItems.length > 0) {
+                  runActionTransaction(project, `PremierSEYO: Remove leftover audio (retry ${retries})`, () => {
+                    return createRemoveActionForItems(ppro, editor, afterRemove.audioItems, true, mediaTypeAudio, true);
+                  });
+                }
+              } catch (e) {
+                console.warn("Retry remove hatasi:", e.message);
+              }
+            }
+            await new Promise((r) => setTimeout(r, 500));
+            ({ project, sequence, editor } = await refreshSequenceContext(ppro, sequence));
+          }
+          if (leftoverCount > 0) {
+            throw new Error(`Orijinal klipler silinemedi: ${leftoverCount} item kaldi (6 retry sonrasi). mediaType V=${mediaTypeVideo} A=${mediaTypeAudio}`);
+          }
+          stageLog("Phase 1 tamam: timeline bosaldi");
+          let successCount = 0;
+          const usedClipPIs = /* @__PURE__ */ new Map();
+          for (let i = 0; i < pieces.length; i++) {
+            const piece = pieces[i];
             const segmentNumber = i + 1;
-            const srcIn = ppro.TickTime.createWithSeconds(seg.start);
-            const srcOut = ppro.TickTime.createWithSeconds(seg.end);
-            stage = `seg ${segmentNumber} source in/out`;
-            runActionTransaction(project, `PremierSEYO: Source in/out seg ${segmentNumber}`, () => {
+            const resolved = pathToItem.get(piece.path);
+            if (!resolved) {
+              throw new Error(`Parca ${segmentNumber} icin project item kayip: ${piece.path}`);
+            }
+            let clipPI = resolved.clipPI;
+            if (!clipPI) {
+              clipPI = await safeCastClipProjectItem(ppro, resolved.projectItem);
+              if (!clipPI) throw new Error(`ClipProjectItem.cast basarisiz: ${piece.path}`);
+              resolved.clipPI = clipPI;
+            }
+            usedClipPIs.set(piece.path, clipPI);
+            const srcIn = ppro.TickTime.createWithSeconds(piece.sourceIn);
+            const srcOut = ppro.TickTime.createWithSeconds(piece.sourceOut);
+            const currentItems = await seqEditor2.getTrackItems(sequence);
+            const allEnds = [...currentItems.videoItems, ...currentItems.audioItems].map((i2) => i2.end);
+            const sequenceEnd = allEnds.length > 0 ? Math.max(...allEnds) : 0;
+            const dst = ppro.TickTime.createWithSeconds(sequenceEnd);
+            stage = `parca ${segmentNumber}/${pieces.length} source in/out`;
+            runActionTransaction(project, `PremierSEYO: Source in/out ${segmentNumber}`, () => {
               const action = clipPI.createSetInOutPointsAction(srcIn, srcOut);
               if (!action) throw new Error("createSetInOutPointsAction null");
               return action;
             });
-            stage = `seg ${segmentNumber} insert`;
-            resolvedProjectItem = await resolveProjectItem(ppro, project, resolvedProjectItem, rootMediaPath);
-            clipPI = await safeCastClipProjectItem(ppro, resolvedProjectItem);
-            const dstAtInsert = dst;
-            runActionTransaction(project, `PremierSEYO: Insert seg ${segmentNumber}`, () => {
+            stage = `parca ${segmentNumber}/${pieces.length} insert @ ${sequenceEnd.toFixed(3)}s`;
+            runActionTransaction(project, `PremierSEYO: Insert ${segmentNumber}`, () => {
               const action = editor.createInsertProjectItemAction(
-                resolvedProjectItem,
-                dstAtInsert,
+                resolved.projectItem,
+                dst,
                 videoTrackIdx,
                 audioTrackIdx,
                 true
               );
-              if (!action) throw new Error(`insert action null (seg ${segmentNumber})`);
+              if (!action) throw new Error(`insert action null (parca ${segmentNumber})`);
               return action;
             });
             await new Promise((r) => setTimeout(r, 180));
             ({ project, sequence, editor } = await refreshSequenceContext(ppro, sequence));
-            dst = tickAdd(ppro, dst, tickSub(ppro, srcOut, srcIn));
             successCount++;
             if (onProgress) {
-              onProgress(Math.round(successCount / keepSegments.length * 95));
+              onProgress(Math.round(successCount / pieces.length * 95));
             }
           }
           stage = "clear source in/out";
-          try {
-            runActionTransaction(project, "PremierSEYO: Clear source in/out", () => {
-              if (typeof clipPI.createClearInOutPointsAction !== "function") return null;
-              return clipPI.createClearInOutPointsAction();
-            });
-          } catch (e) {
-            console.warn("clear in/out uyarisi:", e.message);
+          for (const [, clipPI] of usedClipPIs) {
+            try {
+              runActionTransaction(project, "PremierSEYO: Clear source in/out", () => {
+                if (typeof clipPI.createClearInOutPointsAction !== "function") return null;
+                return clipPI.createClearInOutPointsAction();
+              });
+            } catch (e) {
+              console.warn("clear in/out uyarisi:", e.message);
+            }
           }
           if (onProgress) onProgress(100);
           return {
             success: true,
-            message: `${successCount}/${keepSegments.length} segment kesildi`
+            message: `${successCount}/${pieces.length} parca eklendi (${keepSegments.length} keep segmenti)`,
+            mode: "pieces"
           };
         } catch (e) {
           console.error("Reconstruction hatasi:", e);
           throw new Error(`Kesim uygulanamadi (${stage}): ` + (e.message || String(e)));
+        }
+      }
+      async function resolveProjectItemsByPaths(ppro, project, wantedPaths) {
+        const wanted = new Set(wantedPaths);
+        const pathToItem = /* @__PURE__ */ new Map();
+        const rootItem = await project.getRootItem();
+        const seen = /* @__PURE__ */ new Set();
+        await walkForPaths(ppro, rootItem, wanted, pathToItem, seen);
+        return pathToItem;
+      }
+      async function walkForPaths(ppro, projectItem, wanted, pathToItem, seen) {
+        if (!projectItem) return;
+        if (wanted.size === pathToItem.size) return;
+        let key = "";
+        try {
+          key = String(projectItem.guid || projectItem.name || "");
+        } catch {
+        }
+        if (key && seen.has(key)) return;
+        if (key) seen.add(key);
+        try {
+          const clipItem = await ppro.ClipProjectItem.cast(projectItem);
+          if (clipItem) {
+            const path = await clipItem.getMediaFilePath();
+            if (path && wanted.has(path) && !pathToItem.has(path)) {
+              pathToItem.set(path, { projectItem, clipPI: clipItem });
+            }
+          }
+        } catch {
+        }
+        try {
+          const folderItem = await ppro.FolderItem.cast(projectItem);
+          if (folderItem && typeof folderItem.getItems === "function") {
+            const children = await folderItem.getItems();
+            if (Array.isArray(children)) {
+              for (const child of children) {
+                await walkForPaths(ppro, child, wanted, pathToItem, seen);
+                if (wanted.size === pathToItem.size) return;
+              }
+            }
+          }
+        } catch {
         }
       }
       async function safeCastClipProjectItem(ppro, projectItem) {
@@ -1589,50 +2847,10 @@ ${cap.text}`;
         }
         return null;
       }
-      function tickAdd(ppro, a, b) {
-        if (a && typeof a.add === "function") {
-          try {
-            return a.add(b);
-          } catch {
-          }
-        }
-        const secs = toSeconds(a) + toSeconds(b);
-        return ppro.TickTime.createWithSeconds(secs);
-      }
-      function tickSub(ppro, a, b) {
-        if (a && typeof a.subtract === "function") {
-          try {
-            return a.subtract(b);
-          } catch {
-          }
-        }
-        const secs = toSeconds(a) - toSeconds(b);
-        return ppro.TickTime.createWithSeconds(secs);
-      }
-      function toSeconds(tickTime) {
-        if (!tickTime) return 0;
-        if (typeof tickTime.seconds === "number") return tickTime.seconds;
-        try {
-          return Number(tickTime.seconds || 0);
-        } catch {
-          return 0;
-        }
-      }
       function pickTargetTracks(videoItems, audioItems) {
         const videoTrackIdx = videoItems.length > 0 ? Math.min(...videoItems.map((i) => i.trackIndex)) : 0;
         const audioTrackIdx = audioItems.length > 0 ? Math.min(...audioItems.map((i) => i.trackIndex)) : 0;
         return { videoTrackIdx, audioTrackIdx };
-      }
-      async function findPrimaryProjectItem(videoItems, audioItems) {
-        const candidates = [...videoItems, ...audioItems];
-        for (const ti of candidates) {
-          try {
-            const projectItem = await ti.item.getProjectItem();
-            if (projectItem) return projectItem;
-          } catch {
-          }
-        }
-        return null;
       }
       function getMediaType(ppro, name, fallback) {
         const mediaType = (ppro.Constants || ppro.constants || {}).MediaType || {};
@@ -1706,65 +2924,6 @@ ${cap.text}`;
         const editor = ppro.SequenceEditor.getEditor(sequence);
         if (!editor) throw new Error("SequenceEditor alinamadi");
         return { project, sequence, editor };
-      }
-      async function getProjectItemMediaPath(ppro, projectItem) {
-        try {
-          const clipItem = await ppro.ClipProjectItem.cast(projectItem);
-          if (!clipItem) return "";
-          return await clipItem.getMediaFilePath();
-        } catch {
-          return "";
-        }
-      }
-      async function resolveProjectItem(ppro, project, cachedProjectItem, mediaPath) {
-        if (cachedProjectItem) {
-          try {
-            if (!mediaPath) return cachedProjectItem;
-            const cachedPath = await getProjectItemMediaPath(ppro, cachedProjectItem);
-            if (cachedPath === mediaPath) return cachedProjectItem;
-          } catch {
-          }
-        }
-        if (!mediaPath) return cachedProjectItem;
-        try {
-          const rootItem = await project.getRootItem();
-          const found = await findProjectItemByMediaPath(ppro, rootItem, mediaPath, /* @__PURE__ */ new Set());
-          return found || cachedProjectItem;
-        } catch {
-          return cachedProjectItem;
-        }
-      }
-      async function findProjectItemByMediaPath(ppro, projectItem, mediaPath, seen) {
-        if (!projectItem) return null;
-        let key = "";
-        try {
-          key = String(projectItem.guid || projectItem.name || "");
-        } catch {
-        }
-        if (key && seen.has(key)) return null;
-        if (key) seen.add(key);
-        try {
-          const clipItem = await ppro.ClipProjectItem.cast(projectItem);
-          if (clipItem) {
-            const path = await clipItem.getMediaFilePath();
-            if (path === mediaPath) return projectItem;
-          }
-        } catch {
-        }
-        try {
-          const folderItem = await ppro.FolderItem.cast(projectItem);
-          if (folderItem && typeof folderItem.getItems === "function") {
-            const children = await folderItem.getItems();
-            if (Array.isArray(children)) {
-              for (const child of children) {
-                const found = await findProjectItemByMediaPath(ppro, child, mediaPath, seen);
-                if (found) return found;
-              }
-            }
-          }
-        } catch {
-        }
-        return null;
       }
       function runActionTransaction(project, label, actionFactory) {
         let ok = true;
@@ -1844,6 +3003,7 @@ ${cap.text}`;
   var analysisResult = null;
   var transcriptResult = null;
   var currentAudioPath = null;
+  var settingsHydrated = false;
   function init() {
     try {
       _earlyStatus("Init basladi");
@@ -1852,11 +3012,16 @@ ${cap.text}`;
       setupTabs();
       setupSliders();
       setupSteppers();
+      setupPersistedInputs();
       setupCollapsibles();
       setupButtons();
+      setupSettingsDrawer();
       restoreSettings();
+      settingsHydrated = true;
+      saveCurrentSettings();
       _earlyStatus("Init tamam \u2014 dep check");
       checkDependencies();
+      refreshConnectionStatus();
     } catch (e) {
       _earlyStatus("Init hatasi: " + e.message);
       console.error("PremiereCut init error:", e);
@@ -1890,7 +3055,8 @@ ${cap.text}`;
       { id: "minKeepDuration", suffix: "s" },
       { id: "maxSubDuration", suffix: "s" },
       { id: "minSubDuration", suffix: "s" },
-      { id: "cpsLimit", suffix: "" }
+      { id: "cpsLimit", suffix: "" },
+      { id: "subtitleOffset", suffix: "ms" }
     ];
     sliders.forEach(({ id, suffix }) => {
       const slider = document.getElementById(id);
@@ -2061,6 +3227,20 @@ ${cap.text}`;
       });
     });
   }
+  function setupPersistedInputs() {
+    const persistedIds = [
+      "detectBreaths",
+      "splitOnSentence",
+      "splitOnPause",
+      "srt-language",
+      "srt-model"
+    ];
+    persistedIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("change", saveCurrentSettings);
+    });
+  }
   function setupCollapsibles() {
     ["advanced-cut", "advanced-srt"].forEach((prefix) => {
       const toggle = document.getElementById(`${prefix}-toggle`);
@@ -2086,7 +3266,12 @@ ${cap.text}`;
   function handleResetSettings() {
     config.reset();
     restoreSettings();
-    setStatus("Ayarlar varsayilana donduruldu", "success");
+    analysisResult = null;
+    const resultsEl = document.getElementById("results-cut");
+    if (resultsEl) resultsEl.style.display = "none";
+    const applyBtn = document.getElementById("btn-apply-cut");
+    if (applyBtn) applyBtn.disabled = true;
+    setStatus("Ayarlar sifirlandi \u2014 Analiz Et'e tekrar basin", "success");
   }
   async function checkDependencies() {
     try {
@@ -2096,7 +3281,7 @@ ${cap.text}`;
       updateDepBadge("model", res.models && res.models.length > 0);
       if (!res.ffmpeg || !res.whisper || !(res.models && res.models.length)) {
         const dc = document.getElementById("dep-check-cut");
-        if (dc) dc.style.display = "block";
+        if (dc) dc.style.display = "flex";
       }
       setStatus("Hazir", "success");
     } catch (err) {
@@ -2105,8 +3290,8 @@ ${cap.text}`;
       updateDepBadge("whisper", false);
       updateDepBadge("model", false);
       const dc = document.getElementById("dep-check-cut");
-      if (dc) dc.style.display = "block";
-      setStatus("Daemon baslatilmamis. install-daemon.sh calistirin.", "error");
+      if (dc) dc.style.display = "flex";
+      setStatus(err.message || "Daemon baglantisi kurulamadi", "error");
     }
   }
   function updateDepBadge(name, ok) {
@@ -2122,7 +3307,9 @@ ${cap.text}`;
     setStatus("Analiz ediliyor...");
     try {
       updateProgress("cut", 10, "Sequence'den ses cikariliyor...");
-      currentAudioPath = await audioExporter.exportAudio({ sampleRate: 48e3 });
+      const exported = await audioExporter.exportAudio({ sampleRate: 48e3, mono: true });
+      currentAudioPath = exported.outputPath;
+      const clipsMeta = exported.clips;
       updateProgress("cut", 40, "Sessizlikler tespit ediliyor...");
       const settings = getCurrentSettings();
       const sd = await silenceDetector.detect(currentAudioPath, {
@@ -2137,12 +3324,12 @@ ${cap.text}`;
         breathRegions = breathDetector.findBreathCandidates(silenceRegions);
       }
       updateProgress("cut", 90, "Segmentler hesaplaniyor...");
-      const paddingMs = parseInt(document.getElementById("padding").value);
       analysisResult = segmentBuilder.build(totalDuration, silenceRegions, breathRegions, {
-        paddingBefore: paddingMs / 1e3,
-        paddingAfter: paddingMs / 1e3,
+        paddingBefore: settings.paddingBefore,
+        paddingAfter: settings.paddingAfter,
         minKeepDuration: settings.minKeepDuration
       });
+      analysisResult.clipsMeta = clipsMeta;
       updateProgress("cut", 100, "Tamamlandi");
       displayCutResults(analysisResult);
       const applyBtn = document.getElementById("btn-apply-cut");
@@ -2150,7 +3337,11 @@ ${cap.text}`;
       if (!analysisResult.keep || analysisResult.keep.length === 0) {
         setStatus("Tutulacak bolge yok \u2014 esigi dusur (-40 dB gibi) ve 'Sifirla' deneyin", "error");
       } else {
-        setStatus(`Analiz tamam: ${analysisResult.remove.length} sessiz, ${analysisResult.keep.length} tutulacak bolge`, "success");
+        const s = analysisResult.stats;
+        setStatus(
+          `Analiz: ${s.silenceCount} sessiz, ${analysisResult.remove.length} remove-bolge, ${analysisResult.keep.length} keep, kesilen=${s.totalRemove.toFixed(2)}s, pad=${settings.paddingBefore.toFixed(3)}s`,
+          "success"
+        );
       }
     } catch (err) {
       console.error("Analiz hatasi:", err);
@@ -2173,6 +3364,16 @@ ${cap.text}`;
       setStatus("Silinecek sessizlik bulunamadi \u2014 esigi yukselt veya min. sessizligi dusur", "error");
       return;
     }
+    const proceed = await showConfirm({
+      title: "Sequence kopyas\u0131 ald\u0131n m\u0131?",
+      body: `Auto-Cut <strong>aktif sequence'i yerinde keser</strong>. Cmd+Z birden fazla undo gerektirir, tek ad\u0131mda geri alm\u0131yor. L\xFCtfen \xF6nce <strong>Project paneli'nde sequence'e sa\u011F t\u0131k \u2192 "Duplicate"</strong> yaparak kopya al, sonra devam et.`,
+      confirmLabel: "Kopya ald\u0131m, devam et",
+      cancelLabel: "\u0130ptal"
+    });
+    if (!proceed) {
+      setStatus("\u0130ptal edildi \u2014 sequence kopyas\u0131 al, sonra tekrar ba\u015Flat", "");
+      return;
+    }
     const btn = document.getElementById("btn-apply-cut");
     btn.disabled = true;
     showProgress("cut", true, "Kesim basliyor (Cmd+Z ile geri alinabilir)...");
@@ -2180,12 +3381,19 @@ ${cap.text}`;
       updateProgress("cut", 10, "Sequence aliniyor...");
       const seq = await duplicator.duplicateActiveSequence(" - AutoCut");
       updateProgress("cut", 20, "Kesim uygulaniyor...");
+      await daemon.log("reconstruct", `START keep=${analysisResult.keep.length} clipsMeta=${(analysisResult.clipsMeta || []).length}`);
       const result = await reconstructor.reconstruct(
         seq,
-        analysisResult.remove,
         (pct) => updateProgress("cut", 20 + Math.round(pct * 0.8), `%${pct}`),
-        analysisResult.keep
+        analysisResult.keep,
+        analysisResult.clipsMeta,
+        (stageMsg) => {
+          updateProgress("cut", null, stageMsg);
+          setStatus(stageMsg);
+          daemon.log("reconstruct", stageMsg);
+        }
       );
+      await daemon.log("reconstruct", `END success=${result.success} message=${result.message}`);
       updateProgress("cut", 100, "Tamamlandi");
       setStatus(`AutoCut: ${result.message}`, result.success ? "success" : "error");
     } catch (err) {
@@ -2203,16 +3411,55 @@ ${cap.text}`;
     setStatus("Transkript ediliyor...");
     try {
       updateProgress("srt", 10, "Ses cikariliyor...");
-      const audioPath = await audioExporter.exportAudio({
+      const { outputPath: audioPath } = await audioExporter.exportAudio({
         sampleRate: 16e3,
         mono: true,
         suffix: "-srt"
       });
       currentAudioPath = audioPath;
-      updateProgress("srt", 20, "Whisper calisiyor (1-5 dakika surebilir)...");
-      const language = document.getElementById("srt-language").value;
-      const model = document.getElementById("srt-model").value;
-      const segments = await transcriber.transcribe(audioPath, { language, model });
+      updateProgress("srt", 15, "Konusma baslangici tespit ediliyor...");
+      let realSpeechStart = 0;
+      let silenceRegions = [];
+      try {
+        const sd = await silenceDetector.detect(audioPath, {
+          noiseThreshold: -40,
+          minDuration: 0.25
+        });
+        silenceRegions = Array.isArray(sd.regions) ? sd.regions : [];
+        if (silenceRegions.length > 0 && silenceRegions[0].start <= 0.05) {
+          realSpeechStart = silenceRegions[0].end;
+        }
+      } catch (e) {
+        console.warn("Auto-offset silence detect hatasi:", e.message);
+      }
+      updateProgress("srt", 20, "Deepgram Nova-3 transkripsiyon (T\xFCrk\xE7e)...");
+      const preTranscribeSettings = getCurrentSettings();
+      const language = preTranscribeSettings.language || "tr";
+      let segments = await transcriber.transcribe(audioPath, { language });
+      segments = sanitizeTranscriptSegments(segments);
+      const whisperFirstWord = findFirstSpeechStart(segments);
+      let autoOffsetSec = 0;
+      if (Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity && realSpeechStart > 0) {
+        autoOffsetSec = realSpeechStart - whisperFirstWord;
+        autoOffsetSec = Math.max(0, Math.min(2, autoOffsetSec));
+        if (autoOffsetSec < 0.04) autoOffsetSec = 0;
+      }
+      if (autoOffsetSec) {
+        segments = applyOffsetToSegments(segments, autoOffsetSec);
+      }
+      if (silenceRegions.length > 0) {
+        segments = stripSilenceOnlyWords(segments, silenceRegions);
+      }
+      const manualOffsetSec = (preTranscribeSettings.subtitleOffsetMs || 0) / 1e3;
+      if (manualOffsetSec) {
+        segments = applyOffsetToSegments(segments, manualOffsetSec);
+      }
+      setStatus(
+        `Auto-offset: +${Math.round(autoOffsetSec * 1e3)}ms (gercek ${realSpeechStart.toFixed(2)}s, Whisper ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s) manuel ${Math.round(manualOffsetSec * 1e3)}ms`
+      );
+      if (segments.length === 0) {
+        throw new Error("Anlamli konusma segmenti bulunamadi");
+      }
       updateProgress("srt", 85, "Altyazilar olusturuluyor...");
       const allWords = [];
       for (const seg of segments) {
@@ -2231,6 +3478,9 @@ ${cap.text}`;
           });
         }
       }
+      if (allWords.length === 0) {
+        throw new Error("Altyazi icin kullanilabilir kelime bulunamadi");
+      }
       const settings = getCurrentSettings();
       const captions = captionGrouper.group(allWords, settings);
       transcriptResult = { segments, captions };
@@ -2245,6 +3495,77 @@ ${cap.text}`;
       setTimeout(() => showProgress("srt", false), 1500);
     }
   }
+  function isMeaningfulWordText(text) {
+    if (!text) return false;
+    const stripped = String(text).replace(/[\s\.,!?;:…\-"'`()\[\]{}]+/g, "");
+    return stripped.length > 0;
+  }
+  function sanitizeTranscriptSegments(segments) {
+    return (segments || []).map((seg) => {
+      const words = (seg.words || []).filter((w) => isMeaningfulWordText(w.text) && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start);
+      return {
+        ...seg,
+        words
+      };
+    }).filter((seg) => seg.words.length > 0 || isMeaningfulWordText(seg.text));
+  }
+  function findFirstSpeechStart(segments) {
+    let first = Infinity;
+    for (const seg of segments || []) {
+      if (Array.isArray(seg.words)) {
+        for (const w of seg.words) {
+          if (isMeaningfulWordText(w.text) && Number.isFinite(w.start)) {
+            first = Math.min(first, w.start);
+            break;
+          }
+        }
+      }
+      if (Number.isFinite(first) && first < Infinity) break;
+      if (isMeaningfulWordText(seg.text) && Number.isFinite(seg.start)) {
+        first = Math.min(first, seg.start);
+      }
+    }
+    return first;
+  }
+  function applyOffsetToSegments(segments, offsetSec) {
+    if (!offsetSec) return segments;
+    return (segments || []).map((seg) => ({
+      ...seg,
+      start: Math.max(0, seg.start + offsetSec),
+      end: Math.max(0, seg.end + offsetSec),
+      words: (seg.words || []).map((w) => ({
+        ...w,
+        start: Math.max(0, w.start + offsetSec),
+        end: Math.max(0, w.end + offsetSec)
+      }))
+    }));
+  }
+  function stripSilenceOnlyWords(segments, silenceRegions) {
+    return (segments || []).map((seg) => {
+      const filteredWords = (seg.words || []).filter((word) => !isWordInsideSilence(word, silenceRegions));
+      if (filteredWords.length > 0) {
+        return {
+          ...seg,
+          start: filteredWords[0].start,
+          end: filteredWords[filteredWords.length - 1].end,
+          text: filteredWords.map((w) => w.text).join(" "),
+          words: filteredWords
+        };
+      }
+      if (isMeaningfulWordText(seg.text) && !isWordInsideSilence(seg, silenceRegions)) {
+        return { ...seg, words: [] };
+      }
+      return null;
+    }).filter(Boolean);
+  }
+  function isWordInsideSilence(item, silenceRegions) {
+    if (!item || !Array.isArray(silenceRegions) || silenceRegions.length === 0) return false;
+    const start = Number(item.start);
+    const end = Number(item.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
+    const midpoint = (start + end) / 2;
+    return silenceRegions.some((region) => region && region.duration >= 0.25 && midpoint >= region.start + 0.05 && midpoint <= region.end - 0.05);
+  }
   async function handleSaveSRT() {
     if (!transcriptResult || !transcriptResult.captions.length) {
       setStatus("Once transkript yapin", "error");
@@ -2256,7 +3577,8 @@ ${cap.text}`;
       const sequence = await project.getActiveSequence();
       const seqName = sequence.name || "sequence";
       const safeName = String(seqName).replace(/[^a-zA-Z0-9_-]/g, "_");
-      const outputDir = "/Users/" + getUserName() + "/Documents/PremierSEYO";
+      const { documentsDir } = await daemon.getHomeDirs();
+      const outputDir = `${documentsDir}/PremierSEYO`;
       const savedFiles = [];
       if (document.getElementById("output-srt").checked) {
         const srtPath = `${outputDir}/${safeName}.srt`;
@@ -2289,14 +3611,6 @@ ${cap.text}`;
     } catch (err) {
       console.error("Save hatasi:", err);
       setStatus(`Hata: ${err.message}`, "error");
-    }
-  }
-  function getUserName() {
-    try {
-      const os = __require("os");
-      return os.userInfo().username;
-    } catch {
-      return "seyo";
     }
   }
   function displayCutResults(result) {
@@ -2359,7 +3673,9 @@ ${cap.text}`;
   function updateProgress(tab, percent, text) {
     const fill = document.getElementById(`progress-${tab}-fill`);
     const textEl = document.getElementById(`progress-${tab}-text`);
-    if (fill) fill.style.width = `${percent}%`;
+    if (fill && typeof percent === "number" && isFinite(percent)) {
+      fill.style.width = `${percent}%`;
+    }
     if (text && textEl) textEl.textContent = text;
   }
   function setStatus(text, type = "") {
@@ -2374,30 +3690,46 @@ ${cap.text}`;
   function readSliderValue(id) {
     const el = document.getElementById(id);
     if (!el) return NaN;
-    return parseFloat(el.dataset && el.dataset.value !== void 0 ? el.dataset.value : el.value);
+    if (el.getAttribute) {
+      const attr = el.getAttribute("data-value");
+      if (attr !== null && attr !== void 0 && attr !== "") {
+        const n = parseFloat(attr);
+        if (!isNaN(n)) return n;
+      }
+    }
+    if (el.dataset && el.dataset.value !== void 0) {
+      const n = parseFloat(el.dataset.value);
+      if (!isNaN(n)) return n;
+    }
+    return parseFloat(el.value);
+  }
+  function safeNumber(val, fallback) {
+    return typeof val === "number" && isFinite(val) ? val : fallback;
   }
   function getCurrentSettings() {
-    const paddingMs = readSliderValue("padding");
-    const paddingSeconds = (isNaN(paddingMs) ? 150 : paddingMs) / 1e3;
+    const paddingMs = safeNumber(readSliderValue("padding"), 150);
+    const langSel = document.getElementById("srt-language");
     return {
-      silenceThreshold: parseInt(readSliderValue("silenceThreshold")),
-      minSilenceDuration: readSliderValue("minSilenceDuration"),
-      paddingBefore: paddingSeconds,
-      paddingAfter: paddingSeconds,
+      silenceThreshold: safeNumber(parseInt(readSliderValue("silenceThreshold")), -40),
+      minSilenceDuration: safeNumber(readSliderValue("minSilenceDuration"), 0.4),
+      paddingBefore: paddingMs / 1e3,
+      paddingAfter: paddingMs / 1e3,
       detectBreaths: document.getElementById("detectBreaths").checked,
-      minKeepDuration: readSliderValue("minKeepDuration"),
-      maxLinesPerSub: parseInt(document.getElementById("maxLinesPerSub-val").textContent),
-      maxWordsPerLine: parseInt(document.getElementById("maxWordsPerLine-val").textContent),
+      minKeepDuration: safeNumber(readSliderValue("minKeepDuration"), 0.3),
+      maxLinesPerSub: safeNumber(parseInt(document.getElementById("maxLinesPerSub-val").textContent), 2),
+      maxWordsPerLine: safeNumber(parseInt(document.getElementById("maxWordsPerLine-val").textContent), 6),
       maxCharsPerLine: 999,
-      // devre disi
-      maxSubDuration: readSliderValue("maxSubDuration"),
-      minSubDuration: readSliderValue("minSubDuration"),
-      cpsLimit: parseInt(readSliderValue("cpsLimit")),
+      maxSubDuration: safeNumber(readSliderValue("maxSubDuration"), 5),
+      minSubDuration: safeNumber(readSliderValue("minSubDuration"), 0),
+      cpsLimit: safeNumber(parseInt(readSliderValue("cpsLimit")), 20),
+      subtitleOffsetMs: safeNumber(readSliderValue("subtitleOffset"), 0),
+      language: langSel && langSel.value || "tr",
       splitOnSentence: document.getElementById("splitOnSentence").checked,
       splitOnPause: document.getElementById("splitOnPause").checked
     };
   }
   function saveCurrentSettings() {
+    if (!settingsHydrated) return;
     config.save(getCurrentSettings());
   }
   function restoreSettings() {
@@ -2409,6 +3741,9 @@ ${cap.text}`;
     setSlider("maxSubDuration", s.maxSubDuration, "s");
     setSlider("minSubDuration", s.minSubDuration, "s");
     setSlider("cpsLimit", s.cpsLimit, "");
+    setSlider("subtitleOffset", s.subtitleOffsetMs != null ? s.subtitleOffsetMs : 0, "ms");
+    const langSel = document.getElementById("srt-language");
+    if (langSel && s.language) langSel.value = s.language;
     setStepperVal("maxLinesPerSub", s.maxLinesPerSub);
     setStepperVal("maxWordsPerLine", s.maxWordsPerLine);
     setCheckbox("detectBreaths", s.detectBreaths);
@@ -2450,6 +3785,202 @@ ${cap.text}`;
   function setCheckbox(id, checked) {
     const cb = document.getElementById(id);
     if (cb) cb.checked = checked;
+  }
+  function setupSettingsDrawer() {
+    const backdrop = document.getElementById("drawer-backdrop");
+    const drawer = document.getElementById("drawer-settings");
+    const closeBtn = document.getElementById("drawer-close");
+    const settingsBtn = document.getElementById("btn-settings");
+    const onboardingBtn = document.getElementById("btn-onboarding-open");
+    const connBadge = document.getElementById("conn-badge");
+    const keyInput = document.getElementById("api-key-input");
+    const keyToggle = document.getElementById("api-key-toggle");
+    const testBtn = document.getElementById("btn-test-key");
+    const saveBtn = document.getElementById("btn-save-key");
+    const signupLink = document.getElementById("link-deepgram-signup");
+    const getKeyLink = document.getElementById("link-get-key");
+    const open = () => {
+      if (!drawer) return;
+      drawer.classList.add("open");
+      if (backdrop) backdrop.classList.add("open");
+      setTimeout(() => {
+        if (keyInput && document.body.classList.contains("no-key")) keyInput.focus();
+      }, 280);
+    };
+    const close = () => {
+      if (drawer) drawer.classList.remove("open");
+      if (backdrop) backdrop.classList.remove("open");
+    };
+    if (settingsBtn) settingsBtn.addEventListener("click", open);
+    if (onboardingBtn) onboardingBtn.addEventListener("click", open);
+    if (connBadge) connBadge.addEventListener("click", open);
+    if (closeBtn) closeBtn.addEventListener("click", close);
+    if (backdrop) backdrop.addEventListener("click", close);
+    if (keyToggle && keyInput) {
+      keyToggle.addEventListener("click", () => {
+        keyInput.type = keyInput.type === "password" ? "text" : "password";
+      });
+    }
+    if (testBtn) {
+      testBtn.addEventListener("click", async () => {
+        const typed = keyInput && keyInput.value.trim();
+        await runConnectionTest(testBtn, typed || null);
+      });
+    }
+    if (saveBtn) {
+      saveBtn.addEventListener("click", async () => {
+        const key = keyInput && keyInput.value.trim();
+        if (!key) {
+          showToast("Key bo\u015F", "error");
+          return;
+        }
+        saveBtn.disabled = true;
+        const orig = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<span class="spinner"></span> Kaydediliyor';
+        try {
+          await daemon.setDeepgramKey(key);
+          keyInput.value = "";
+          keyInput.type = "password";
+          await runConnectionTest(testBtn);
+          await refreshConnectionStatus();
+          showToast("key kaydedildi", "success");
+          setTimeout(close, 800);
+        } catch (e) {
+          showToast(`hata: ${e.message}`, "error");
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = orig;
+        }
+      });
+    }
+    if (signupLink) {
+      signupLink.addEventListener("click", () => showToast("console.deepgram.com", ""));
+    }
+    if (getKeyLink) {
+      getKeyLink.addEventListener("click", () => showToast("console.deepgram.com", ""));
+    }
+  }
+  async function runConnectionTest(testBtn, tempKey = null) {
+    const card = document.getElementById("conn-status-card");
+    const stateEl = document.getElementById("conn-card-state");
+    const detailEl = document.getElementById("conn-card-detail");
+    let origLabel = null;
+    if (testBtn) {
+      testBtn.disabled = true;
+      origLabel = testBtn.innerHTML;
+      testBtn.innerHTML = '<span class="spinner"></span> test ediliyor';
+    }
+    try {
+      const res = await daemon.deepgramTest(tempKey);
+      if (card) {
+        card.classList.remove("live", "error");
+        if (res.status === "valid") {
+          card.classList.add("live");
+          if (stateEl) stateEl.textContent = tempKey ? "test ba\u015Far\u0131l\u0131 \xB7 hen\xFCz kaydedilmedi" : "ba\u011Fl\u0131 \xB7 nova-3 haz\u0131r";
+          if (detailEl) detailEl.textContent = tempKey ? `${res.projectCount || 0} proje \xB7 "Kaydet ve Ba\u011Flan" ile saklay\u0131n` : `${res.projectCount || 0} proje g\xF6r\xFCld\xFC`;
+        } else if (res.status === "no_key") {
+          if (stateEl) stateEl.textContent = "key girilmedi";
+          if (detailEl) detailEl.textContent = "Yukar\u0131daki alana key yap\u0131\u015Ft\u0131r";
+        } else {
+          card.classList.add("error");
+          if (stateEl) stateEl.textContent = "ge\xE7ersiz key";
+          if (detailEl) detailEl.textContent = res.message || "tekrar dene";
+        }
+      }
+    } catch (e) {
+      if (card) {
+        card.classList.remove("live");
+        card.classList.add("error");
+        if (stateEl) stateEl.textContent = "test ba\u015Far\u0131s\u0131z";
+        if (detailEl) detailEl.textContent = e.message;
+      }
+    } finally {
+      if (testBtn) {
+        testBtn.disabled = false;
+        testBtn.innerHTML = origLabel || "Ba\u011Flant\u0131y\u0131 Test Et";
+      }
+    }
+  }
+  async function refreshConnectionStatus() {
+    const badge = document.getElementById("conn-badge");
+    const badgeText = document.getElementById("conn-badge-text");
+    try {
+      const check = await daemon.check();
+      const hasKey = !!check.deepgram;
+      if (hasKey) {
+        document.body.classList.remove("no-key");
+        if (badge) {
+          badge.classList.remove("error");
+          badge.classList.add("live");
+        }
+        if (badgeText) badgeText.textContent = "deepgram \xB7 canl\u0131";
+      } else {
+        document.body.classList.add("no-key");
+        if (badge) {
+          badge.classList.remove("live");
+          badge.classList.remove("error");
+        }
+        if (badgeText) badgeText.textContent = "key girilmedi";
+      }
+    } catch (e) {
+      document.body.classList.remove("no-key");
+      if (badge) {
+        badge.classList.remove("live");
+        badge.classList.add("error");
+      }
+      if (badgeText) badgeText.textContent = "daemon yok";
+    }
+  }
+  function showToast(message, type) {
+    const t = document.getElementById("toast");
+    if (!t) return;
+    t.textContent = message;
+    t.className = "toast";
+    if (type) t.classList.add(type);
+    void t.offsetWidth;
+    t.classList.add("show");
+    if (showToast._timer) clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => t.classList.remove("show"), 2400);
+  }
+  function showConfirm({ title, body, confirmLabel = "Devam et", cancelLabel = "\u0130ptal" } = {}) {
+    return new Promise((resolve) => {
+      const backdrop = document.getElementById("modal-backdrop");
+      const titleEl = document.getElementById("modal-title");
+      const bodyEl = document.getElementById("modal-body");
+      const okBtn = document.getElementById("modal-confirm-ok");
+      const cancelBtn = document.getElementById("modal-cancel");
+      if (!backdrop || !okBtn || !cancelBtn) {
+        resolve(true);
+        return;
+      }
+      if (title && titleEl) titleEl.textContent = title;
+      if (body && bodyEl) bodyEl.innerHTML = body;
+      okBtn.textContent = confirmLabel;
+      cancelBtn.textContent = cancelLabel;
+      const cleanup = (result) => {
+        backdrop.classList.remove("open");
+        okBtn.removeEventListener("click", onOk);
+        cancelBtn.removeEventListener("click", onCancel);
+        backdrop.removeEventListener("click", onBackdrop);
+        document.removeEventListener("keydown", onKey);
+        resolve(result);
+      };
+      const onOk = () => cleanup(true);
+      const onCancel = () => cleanup(false);
+      const onBackdrop = (e) => {
+        if (e.target === backdrop) cleanup(false);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") cleanup(false);
+        else if (e.key === "Enter") cleanup(true);
+      };
+      okBtn.addEventListener("click", onOk);
+      cancelBtn.addEventListener("click", onCancel);
+      backdrop.addEventListener("click", onBackdrop);
+      document.addEventListener("keydown", onKey);
+      backdrop.classList.add("open");
+      setTimeout(() => okBtn.focus(), 280);
+    });
   }
   var { entrypoints } = __require("uxp");
   entrypoints.setup({
