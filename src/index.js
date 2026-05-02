@@ -13,7 +13,7 @@ function _earlyStatus(msg) {
 // v1.2.1 build signature — bu metnin status bar'da görünmesi yeni bundle'ın
 // yüklendiğinin görsel kanıtı. Önceki cache'lenen "JS yukleniyor..." görünüyorsa
 // Premiere eski bundle'ı serve ediyor demek.
-_earlyStatus("PremierSEYO v1.2.1 yukleniyor...");
+_earlyStatus("PremierSEYO v1.2.2 mor build yukleniyor...");
 
 let config, daemon, timeUtils, audioExporter, silenceDetector, breathDetector;
 let segmentBuilder, transcriber, captionGrouper, srtWriter, vttWriter;
@@ -70,10 +70,103 @@ function init() {
     _earlyStatus("Init tamam — dep check");
     checkDependencies();
     refreshConnectionStatus();
+    applyBrandStyles();
   } catch (e) {
     _earlyStatus("Init hatasi: " + e.message);
     console.error("PremiereCut init error:", e);
   }
+}
+
+// UXP <button> CSS rule background'larını reddediyor (slider/div çalışıyor — element-spesifik bug).
+// Inline style attribute (HTML-level) bypass eder. Tab click + drawer toggle gibi durumlarda
+// tekrar çağrılması gerekiyor — DOM class değişimleri inline style'ı düşürmez ama active/inactive
+// tab için yeniden uygulamak gerek.
+function _setDisabled(el, val) {
+  if (!el) return;
+  const v = !!val;
+  if (v) {
+    el.setAttribute('aria-disabled', 'true');
+    el.classList.add('is-disabled');
+    el.style.setProperty('pointer-events', 'none', 'important');
+    el.style.setProperty('opacity', '0.55', 'important');
+  } else {
+    el.removeAttribute('aria-disabled');
+    el.classList.remove('is-disabled');
+    el.style.removeProperty('pointer-events');
+    el.style.removeProperty('opacity');
+  }
+  try { el.disabled = v; } catch (e) {}
+}
+
+function _setStyle(el, props) {
+  // Method 1: CSSStyleDeclaration.setProperty
+  for (const k of Object.keys(props)) {
+    try { el.style.setProperty(k, props[k], "important"); } catch {}
+  }
+  // Method 2: setAttribute fallback — UXP'de setProperty bazen butonlarda no-op
+  let inline = el.getAttribute("style") || "";
+  for (const k of Object.keys(props)) {
+    inline += `;${k}:${props[k]} !important`;
+  }
+  try { el.setAttribute("style", inline); } catch {}
+}
+function applyBrandStyles() {
+  const PRI = "#7b53f4";
+  const DARK = "#332272";
+  const FG = "#ffffff";
+  const map = {
+    "btn-primary": { background: PRI, "background-color": PRI, "background-image": "none", color: FG, border: "0" },
+    "btn-success": { background: `linear-gradient(180deg, ${PRI}, ${DARK})`, "background-image": `linear-gradient(180deg, ${PRI}, ${DARK})`, color: FG, border: "0" },
+    "btn-ghost": { background: DARK, "background-color": DARK, "background-image": "none", color: FG, border: `1px solid ${PRI}` },
+    "reset-btn": { background: DARK, "background-color": DARK, "background-image": "none", color: FG, border: `1px solid ${PRI}` },
+    "field-toggle": { background: DARK, "background-color": DARK, "background-image": "none", color: FG, border: `1px solid ${PRI}` },
+    "drawer-close": { background: DARK, "background-color": DARK, "background-image": "none", color: FG, border: `1px solid ${PRI}` },
+    "stepper-btn": { background: DARK, "background-color": DARK, "background-image": "none", color: FG, border: `1px solid ${PRI}` },
+    "icon-btn": { background: DARK, "background-color": DARK, "background-image": "none", color: FG, border: `1px solid ${PRI}` },
+    "conn-badge": { background: DARK, "background-color": DARK, "background-image": "none", color: FG, border: `1px solid ${PRI}` },
+  };
+  for (const cls of Object.keys(map)) {
+    document.querySelectorAll("." + cls).forEach((el) => _setStyle(el, map[cls]));
+  }
+  // Tab aktif/pasif inline style — text ortalı + inactive açık mor
+  document.querySelectorAll(".tab").forEach((t) => {
+    const baseLayout = {
+      display: "flex",
+      "align-items": "center",
+      "justify-content": "center",
+      "text-align": "center",
+    };
+    if (t.classList.contains("active")) {
+      _setStyle(t, {
+        ...baseLayout,
+        background: PRI,
+        "background-color": PRI,
+        "background-image": "none",
+        color: FG,
+        "font-weight": "800",
+        border: `1px solid ${PRI}`,
+        "box-shadow": `inset 0 -3px 0 ${DARK}`,
+      });
+    } else {
+      _setStyle(t, {
+        ...baseLayout,
+        background: "rgba(123, 83, 244, 0.10)",
+        "background-color": "rgba(123, 83, 244, 0.10)",
+        "background-image": "none",
+        color: "#b89bff",
+        "font-weight": "600",
+        border: "1px solid rgba(123, 83, 244, 0.25)",
+        "box-shadow": "none",
+      });
+    }
+  });
+  // SVG ikon stroke'ları beyaz (mor üstüne okunaklı)
+  document.querySelectorAll(".icon-btn svg, .drawer-close svg, .field-toggle svg").forEach((s) => {
+    try {
+      s.setAttribute("stroke", "#ffffff");
+      s.style.setProperty("stroke", "#ffffff", "important");
+    } catch {}
+  });
 }
 
 // UXP'de DOMContentLoaded tetiklenmeyebilir, ikisini de dene
@@ -95,6 +188,8 @@ function setupTabs() {
       tab.classList.add("active");
       const target = document.getElementById(`tab-${tab.dataset.tab}`);
       if (target) target.style.display = "block";
+      // Tab class değişti → inline style yeniden uygula (UXP CSS bg-on-button bug)
+      if (typeof applyBrandStyles === "function") applyBrandStyles();
     });
   });
   // Ilk aktif tab'i goster
@@ -368,7 +463,7 @@ function handleResetSettings() {
   const resultsEl = document.getElementById("results-cut");
   if (resultsEl) resultsEl.style.display = "none";
   const applyBtn = document.getElementById("btn-apply-cut");
-  if (applyBtn) applyBtn.disabled = true;
+  if (applyBtn) _setDisabled(applyBtn, true);
   setStatus("Ayarlar sifirlandi — Analiz Et'e tekrar basin", "success");
 }
 
@@ -407,7 +502,7 @@ function updateDepBadge(name, ok) {
 // ——— AUTO-CUT: Analyze ———
 async function handleAnalyze() {
   const btn = document.getElementById("btn-analyze");
-  btn.disabled = true;
+  _setDisabled(btn, true);
   showProgress("cut", true, "Ses dosyasi hazirlaniyor...");
   setStatus("Analiz ediliyor...");
 
@@ -443,7 +538,7 @@ async function handleAnalyze() {
     updateProgress("cut", 100, "Tamamlandi");
     displayCutResults(analysisResult);
     const applyBtn = document.getElementById("btn-apply-cut");
-    if (applyBtn) applyBtn.disabled = !analysisResult.keep || analysisResult.keep.length === 0;
+    if (applyBtn) _setDisabled(applyBtn, !analysisResult.keep || analysisResult.keep.length === 0);
     if (!analysisResult.keep || analysisResult.keep.length === 0) {
       setStatus("Tutulacak bolge yok — esigi dusur (-40 dB gibi) ve 'Sifirla' deneyin", "error");
     } else {
@@ -460,7 +555,7 @@ async function handleAnalyze() {
     console.error("Analiz hatasi:", err);
     setStatus(`Hata: ${err.message}`, "error");
   } finally {
-    btn.disabled = false;
+    _setDisabled(btn, false);
     setTimeout(() => showProgress("cut", false), 1000);
   }
 }
@@ -494,7 +589,7 @@ async function handleApplyCut() {
   }
 
   const btn = document.getElementById("btn-apply-cut");
-  btn.disabled = true;
+  _setDisabled(btn, true);
   showProgress("cut", true, "Kesim basliyor (Cmd+Z ile geri alinabilir)...");
 
   try {
@@ -522,7 +617,7 @@ async function handleApplyCut() {
     console.error("Cut hatasi:", err);
     setStatus(`Hata: ${err.message}`, "error");
   } finally {
-    btn.disabled = false;
+    _setDisabled(btn, false);
     setTimeout(() => showProgress("cut", false), 1500);
   }
 }
@@ -530,7 +625,7 @@ async function handleApplyCut() {
 // ——— AUTO-SRT: Transcribe ———
 async function handleTranscribe() {
   const btn = document.getElementById("btn-transcribe");
-  btn.disabled = true;
+  _setDisabled(btn, true);
   showProgress("srt", true, "Ses dosyasi hazirlaniyor...");
   setStatus("Transkript ediliyor...");
 
@@ -650,7 +745,7 @@ async function handleTranscribe() {
     console.error("SRT hatasi:", err);
     setStatus(`Hata: ${err.message}`, "error");
   } finally {
-    btn.disabled = false;
+    _setDisabled(btn, false);
     setTimeout(() => showProgress("srt", false), 1500);
   }
 }
@@ -1135,7 +1230,7 @@ function setupSettingsDrawer() {
         showToast("Key boş", "error");
         return;
       }
-      saveBtn.disabled = true;
+      _setDisabled(saveBtn, true);
       const orig = saveBtn.innerHTML;
       saveBtn.innerHTML = '<span class="spinner"></span> Kaydediliyor';
       try {
@@ -1149,7 +1244,7 @@ function setupSettingsDrawer() {
       } catch (e) {
         showToast(`hata: ${e.message}`, "error");
       } finally {
-        saveBtn.disabled = false;
+        _setDisabled(saveBtn, false);
         saveBtn.innerHTML = orig;
       }
     });
@@ -1169,7 +1264,7 @@ async function runConnectionTest(testBtn, tempKey = null) {
   const detailEl = document.getElementById("conn-card-detail");
   let origLabel = null;
   if (testBtn) {
-    testBtn.disabled = true;
+    _setDisabled(testBtn, true);
     origLabel = testBtn.innerHTML;
     testBtn.innerHTML = '<span class="spinner"></span> test ediliyor';
   }
@@ -1201,7 +1296,7 @@ async function runConnectionTest(testBtn, tempKey = null) {
     }
   } finally {
     if (testBtn) {
-      testBtn.disabled = false;
+      _setDisabled(testBtn, false);
       testBtn.innerHTML = origLabel || "Bağlantıyı Test Et";
     }
   }

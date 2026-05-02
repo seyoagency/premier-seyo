@@ -3,10 +3,11 @@
  * UXP'de localStorage mevcut
  */
 
-// v1 → v2 migration: language default "tr" oldu, subtitleOffsetMs eklendi.
-// Yeni key'e gecince localStorage'daki eski ayarlar devre disi kalir ve kullanici
-// "Sifirla" butonuna basmaya gerek kalmadan yeni default'lari alir.
-const STORAGE_KEY = "premierseyo-settings-v2";
+// v2 → v3 migration: splitOnSentence/Pause varsayılanları false oldu —
+// kullanıcı maxWordsPerCaption seçtiği zaman tam o kadar kelime gelmesini
+// bekliyor; cümle sonu/pause ile early flush deterministik değildi.
+// v3 key'e geçince eski v2 ayarlar yok sayılır, yeni default'lar yüklenir.
+const STORAGE_KEY = "premierseyo-settings-v3";
 
 const DEFAULTS = {
   silenceThreshold: -40,
@@ -18,16 +19,18 @@ const DEFAULTS = {
 
   language: "tr",
   subtitleOffsetMs: 0,  // auto-offset varsayılan; slider sadece ince ayar için
-  maxWordsPerCaption: 6,
+  maxWordsPerCaption: 3,
   // Legacy keys: eski localStorage kayıtları ve eski grouper çağrıları bozulmasın.
   maxLinesPerSub: 1,
-  maxWordsPerLine: 6,
+  maxWordsPerLine: 3,
   maxCharsPerLine: 999,
   maxSubDuration: 5,
   minSubDuration: 0,
   cpsLimit: 20,
-  splitOnSentence: true,
-  splitOnPause: true,
+  // splitOnSentence/Pause: false → maxWordsPerCaption HARD CAP olarak çalışır,
+  // cümle sonu/pause early flush yok. Kullanıcı isterse Gelişmiş Ayarlar'dan açar.
+  splitOnSentence: false,
+  splitOnPause: false,
   outputFormat: "srt",
 };
 
