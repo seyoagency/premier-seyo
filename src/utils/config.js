@@ -18,9 +18,11 @@ const DEFAULTS = {
 
   language: "tr",
   subtitleOffsetMs: 0,  // auto-offset varsayılan; slider sadece ince ayar için
-  maxLinesPerSub: 2,
+  maxWordsPerCaption: 6,
+  // Legacy keys: eski localStorage kayıtları ve eski grouper çağrıları bozulmasın.
+  maxLinesPerSub: 1,
   maxWordsPerLine: 6,
-  maxCharsPerLine: 42,
+  maxCharsPerLine: 999,
   maxSubDuration: 5,
   minSubDuration: 0,
   cpsLimit: 20,
@@ -37,7 +39,7 @@ function load() {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        _settings = { ...DEFAULTS, ...parsed };
+        _settings = migrateSettings({ ...DEFAULTS, ...parsed });
       }
     }
   } catch (e) {
@@ -48,7 +50,7 @@ function load() {
 }
 
 function save(updates) {
-  _settings = { ...DEFAULTS, ..._settings, ...updates };
+  _settings = migrateSettings({ ...DEFAULTS, ..._settings, ...updates });
   try {
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(_settings));
@@ -57,6 +59,17 @@ function save(updates) {
     console.warn("Ayarlar kaydedilemedi:", e);
   }
   return _settings;
+}
+
+function migrateSettings(settings) {
+  const next = { ...settings };
+  if (next.maxWordsPerCaption == null) {
+    next.maxWordsPerCaption = next.maxWordsPerLine != null ? next.maxWordsPerLine : DEFAULTS.maxWordsPerCaption;
+  }
+  next.maxWordsPerLine = next.maxWordsPerCaption;
+  next.maxLinesPerSub = 1;
+  next.maxCharsPerLine = 999;
+  return next;
 }
 
 function get() {

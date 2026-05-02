@@ -1,49 +1,47 @@
 /**
  * Word-level timestamp'lerden altyazi gruplari olustur.
  *
- * Basit algoritma (maxWordsPerLine + maxLinesPerSub tabanli):
- * - Kelimeleri sirayla satira ekle
- * - maxWordsPerLine dolunca yeni satira gec
- * - maxLinesPerSub dolunca yeni altyaziya gec
+ * Basit algoritma (maxWordsPerCaption tabanli):
+ * - Kelimeleri sirayla ayni altyaziya ekle
+ * - maxWordsPerCaption dolunca altyaziyi bitir
+ * - Manuel satir kirma ekleme; Premiere caption/text stili gerekirse kendi sarar
  * - Cumle sonunda (. ? !) altyaziyi hemen bitir
  * - Uzun duraklamalarda (> 0.5s) altyaziyi bitir
  * - Max/min sure ve CPS (karakter/saniye) kontrolleri uygula
  */
 
-function group(words, {
-  maxLinesPerSub = 2,
-  maxWordsPerLine = 6,
-  maxCharsPerLine = 999,   // devre disi: kelime sayisi tek kontrol
-  maxSubDuration = 5,
-  minSubDuration = 1,
-  cpsLimit = 20,
-  splitOnSentence = true,
-  splitOnPause = true,
-} = {}) {
+function group(words, options = {}) {
   if (!words || words.length === 0) return [];
 
+  const maxWordsPerCaption = clampInt(
+    options.maxWordsPerCaption != null ? options.maxWordsPerCaption : options.maxWordsPerLine,
+    6,
+    1,
+    50
+  );
+  const maxSubDuration = Number.isFinite(Number(options.maxSubDuration)) ? Number(options.maxSubDuration) : 5;
+  const minSubDuration = Number.isFinite(Number(options.minSubDuration)) ? Number(options.minSubDuration) : 1;
+  const cpsLimit = Number.isFinite(Number(options.cpsLimit)) ? Number(options.cpsLimit) : 20;
+  const splitOnSentence = options.splitOnSentence !== false;
+  const splitOnPause = options.splitOnPause !== false;
+
   const captions = [];
-  let currentLines = [];
-  let currentLineWords = [];
+  let currentWords = [];
   let captionStart = null;
 
   const flush = (endTime) => {
-    // Son satiri kapat
-    if (currentLineWords.length > 0) {
-      currentLines.push(currentLineWords.join(" "));
-      currentLineWords = [];
-    }
-    if (currentLines.length === 0) return;
+    if (currentWords.length === 0) return;
     if (captionStart === null) return;
 
+    const text = currentWords.join(" ");
     captions.push({
       index: captions.length + 1,
       start: captionStart,
       end: endTime,
-      lines: [...currentLines],
-      text: currentLines.join("\n"),
+      lines: [text],
+      text,
     });
-    currentLines = [];
+    currentWords = [];
     captionStart = null;
   };
 
@@ -54,23 +52,11 @@ function group(words, {
 
     if (captionStart === null) captionStart = word.start;
 
-    currentLineWords.push(wordText);
+    currentWords.push(wordText);
 
-    // Satir kelime limiti dolu mu?
-    const lineFull = currentLineWords.length >= maxWordsPerLine;
-    // Ayrica karakter limiti (eger 999 degilse)
-    const lineJoined = currentLineWords.join(" ");
-    const charFull = lineJoined.length >= maxCharsPerLine;
-
-    if (lineFull || charFull) {
-      currentLines.push(lineJoined);
-      currentLineWords = [];
-
-      // Altyazi satir limiti dolu mu?
-      if (currentLines.length >= maxLinesPerSub) {
-        flush(word.end);
-        continue;
-      }
+    if (currentWords.length >= maxWordsPerCaption) {
+      flush(word.end);
+      continue;
     }
 
     // Sure kontrolu
@@ -101,6 +87,12 @@ function group(words, {
   if (last) flush(last.end);
 
   return applyCPSLimit(captions, cpsLimit, minSubDuration);
+}
+
+function clampInt(value, fallback, min, max) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 }
 
 function applyCPSLimit(captions, cpsLimit, minDur) {

@@ -9,7 +9,7 @@
  *   - Component.getMatchName() / getDisplayName() / getParamCount() / getParam(i)
  *   - ComponentParam.areKeyframesSupported() / isTimeVarying() / getValue()
  *   - ComponentParam.getKeyframeListAsTickTimes() / getValueAtTime(TickTime)
- *   - ComponentParam.createSetValueAction(value) / createKeyframe(value)
+ *   - ComponentParam.createKeyframe(value) / createSetValueAction(keyframe, bool)
  *   - ComponentParam.createSetTimeVaryingAction(bool) / createAddKeyframeAction(kf)
  *   - VideoFilterFactory.createComponent(matchName)
  *   - VideoComponentChain.createAppendComponentAction(component)
@@ -143,12 +143,22 @@ async function snapshotChain(trackItem, mediaType) {
               for (const kt of kfTimes) {
                 if (!kt || typeof kt.seconds !== "number") continue;
                 let value = null;
+                let interpolationMode = null;
                 if (typeof param.getValueAtTime === "function") {
                   try { value = await param.getValueAtTime(kt); } catch {}
+                }
+                if (typeof param.getKeyframePtr === "function") {
+                  try {
+                    const kfPtr = await param.getKeyframePtr(kt);
+                    if (kfPtr && typeof kfPtr.getTemporalInterpolationMode === "function") {
+                      interpolationMode = await kfPtr.getTemporalInterpolationMode();
+                    }
+                  } catch {}
                 }
                 keyframes.push({
                   sourceSeconds: kt.seconds - tiStart + tiInPoint,
                   value,
+                  interpolationMode,
                 });
               }
             } catch (e) {
@@ -292,15 +302,11 @@ async function buildParamActions(ppro, param, paramSnap, range) {
 
       for (const kf of filtered) {
         try {
-          const kfObj = await param.createKeyframe(kf.value);
-          if (!kfObj) continue;
           const timelineSec = newTimelineStart + (kf.sourceSeconds - newSourceIn);
-          // position field setter — UXP Keyframe property
-          try {
-            kfObj.position = ppro.TickTime.createWithSeconds(timelineSec);
-          } catch (e) {
-            console.warn("[effects/apply] kf.position set fail:", e.message);
-            continue;
+          const kfObj = await createKeyframeForValue(ppro, param, kf.value, timelineSec);
+          if (!kfObj) continue;
+          if (Number.isFinite(kf.interpolationMode) && typeof kfObj.setTemporalInterpolationMode === "function") {
+            try { await kfObj.setTemporalInterpolationMode(kf.interpolationMode); } catch {}
           }
           const addAction = await param.createAddKeyframeAction(kfObj);
           if (addAction) actions.push(addAction);
@@ -311,7 +317,7 @@ async function buildParamActions(ppro, param, paramSnap, range) {
     } else if (paramSnap.staticValue != null) {
       // Range dışında kaldı → staticValue ile sabitle (clamp)
       try {
-        const a = await safeCall(param.createSetValueAction, param, paramSnap.staticValue);
+        const a = await createSetValueActionForValue(ppro, param, paramSnap.staticValue);
         if (a) actions.push(a);
       } catch (e) {
         console.warn("[effects/apply] setValue (clamp) fail:", e.message);
@@ -319,7 +325,7 @@ async function buildParamActions(ppro, param, paramSnap, range) {
     }
   } else if (paramSnap.staticValue != null) {
     try {
-      const a = await safeCall(param.createSetValueAction, param, paramSnap.staticValue);
+      const a = await createSetValueActionForValue(ppro, param, paramSnap.staticValue);
       if (a) actions.push(a);
     } catch (e) {
       console.warn("[effects/apply] setValue fail:", e.message);
@@ -327,6 +333,138 @@ async function buildParamActions(ppro, param, paramSnap, range) {
   }
 
   return actions;
+}
+
+async function createSetValueActionForValue(ppro, param, value) {
+  const kfObj = await createKeyframeForValue(ppro, param, value);
+  if (!kfObj) return null;
+
+  // Adobe UXP docs: createSetValueAction expects a Keyframe, not the raw value.
+  // Older/beta builds were inconsistent, so keep narrow fallbacks after the
+  // documented call shape.
+  return (
+    await safeCall(param.createSetValueAction, param, kfObj, true) ||
+    await safeCall(param.createSetValueAction, param, kfObj) ||
+    await safeCall(param.createSetValueAction, param, value, true) ||
+    await safeCall(param.createSetValueAction, param, value)
+  );
+}
+
+async function createKeyframeForValue(ppro, param, value, timelineSec) {
+  if (value === undefined || value === null || typeof param.createKeyframe !== "function") {
+    return null;
+  }
+
+  let lastError = null;
+  for (const candidate of getValueCandidates(ppro, value)) {
+    try {
+      const kfObj = await param.createKeyframe(candidate);
+      if (!kfObj) continue;
+      if (Number.isFinite(timelineSec)) {
+        kfObj.position = ppro.TickTime.createWithSeconds(timelineSec);
+      }
+      return kfObj;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  if (lastError) {
+    console.warn("[effects/apply] createKeyframe fail:", describeValue(value), lastError.message);
+  }
+  return null;
+}
+
+function getValueCandidates(ppro, value) {
+  const candidates = [];
+  const seen = [];
+  const push = (v) => {
+    if (v === undefined || v === null) return;
+    if (seen.includes(v)) return;
+    seen.push(v);
+    candidates.push(v);
+  };
+
+  push(value);
+
+  if (Array.isArray(value)) {
+    if (value.length >= 2) push(makePointF(ppro, value[0], value[1]));
+    if (value.length >= 4) push(makeColor(ppro, value[0], value[1], value[2], value[3]));
+  } else if (value && typeof value === "object") {
+    const x = firstFinite(value.x, value.X, value.horizontal, value.h, value[0]);
+    const y = firstFinite(value.y, value.Y, value.vertical, value.v, value[1]);
+    if (Number.isFinite(x) && Number.isFinite(y)) push(makePointF(ppro, x, y));
+
+    const r = firstFinite(value.red, value.r, value[0]);
+    const g = firstFinite(value.green, value.g, value[1]);
+    const b = firstFinite(value.blue, value.b, value[2]);
+    const a = firstFinite(value.alpha, value.a, value[3], 1);
+    if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
+      push(makeColor(ppro, r, g, b, a));
+    }
+
+    if (value.value !== undefined && value.value !== value) push(value.value);
+  }
+
+  return candidates;
+}
+
+function makePointF(ppro, x, y) {
+  const Ctor = ppro && ppro.PointF;
+  if (typeof Ctor !== "function") return null;
+  try {
+    const pt = new Ctor(x, y);
+    pt.x = Number(x);
+    pt.y = Number(y);
+    return pt;
+  } catch {}
+  try {
+    const pt = new Ctor();
+    pt.x = Number(x);
+    pt.y = Number(y);
+    return pt;
+  } catch {}
+  return null;
+}
+
+function makeColor(ppro, red, green, blue, alpha) {
+  const Ctor = ppro && ppro.Color;
+  if (typeof Ctor !== "function") return null;
+  const safeAlpha = Number.isFinite(Number(alpha)) ? Number(alpha) : 1;
+  try {
+    const color = new Ctor(red, green, blue, safeAlpha);
+    color.red = Number(red);
+    color.green = Number(green);
+    color.blue = Number(blue);
+    color.alpha = safeAlpha;
+    return color;
+  } catch {}
+  try {
+    const color = new Ctor();
+    color.red = Number(red);
+    color.green = Number(green);
+    color.blue = Number(blue);
+    color.alpha = safeAlpha;
+    return color;
+  } catch {}
+  return null;
+}
+
+function firstFinite(...values) {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return NaN;
+}
+
+function describeValue(value) {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value !== "object") return `${typeof value}:${String(value)}`;
+  const ctor = value.constructor && value.constructor.name ? value.constructor.name : "object";
+  const keys = Object.keys(value).slice(0, 6).join(",");
+  return `${ctor}{${keys}}`;
 }
 
 function isVideoMediaType(ppro, mediaType) {

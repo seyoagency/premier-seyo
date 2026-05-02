@@ -293,8 +293,7 @@ function makeValueEditable(slider, valueEl, suffix, onChange) {
 
 function setupSteppers() {
   const stepperConfig = {
-    maxLinesPerSub: { min: 1, max: 3 },
-    maxWordsPerLine: { min: 2, max: 12 },
+    maxWordsPerCaption: { min: 1, max: 12 },
   };
 
   document.querySelectorAll(".stepper-btn").forEach(btn => {
@@ -309,7 +308,7 @@ function setupSteppers() {
       val = Math.max(conf.min, Math.min(conf.max, val));
       valEl.textContent = val;
       saveCurrentSettings();
-      // Stepper SRT'ye özel (maxLinesPerSub, maxWordsPerLine) — anında yeniden grupla.
+      // Stepper SRT'ye özel; transcript varsa Deepgram'a gitmeden yeniden grupla.
       if (transcriptResult && typeof rerenderCaptions === "function") rerenderCaptions();
     });
   });
@@ -989,9 +988,15 @@ function safeNumber(val, fallback) {
   return (typeof val === "number" && isFinite(val)) ? val : fallback;
 }
 
+function readStepperInt(id, fallback) {
+  const el = document.getElementById(`${id}-val`);
+  return safeNumber(parseInt(el && el.textContent, 10), fallback);
+}
+
 function getCurrentSettings() {
   const paddingMs = safeNumber(readSliderValue("padding"), 150);
   const langSel = document.getElementById("srt-language");
+  const maxWordsPerCaption = readStepperInt("maxWordsPerCaption", 6);
   return {
     silenceThreshold: safeNumber(parseInt(readSliderValue("silenceThreshold")), -40),
     minSilenceDuration: safeNumber(readSliderValue("minSilenceDuration"), 0.4),
@@ -999,8 +1004,9 @@ function getCurrentSettings() {
     paddingAfter: paddingMs / 1000,
     detectBreaths: document.getElementById("detectBreaths").checked,
     minKeepDuration: safeNumber(readSliderValue("minKeepDuration"), 0.3),
-    maxLinesPerSub: safeNumber(parseInt(document.getElementById("maxLinesPerSub-val").textContent), 2),
-    maxWordsPerLine: safeNumber(parseInt(document.getElementById("maxWordsPerLine-val").textContent), 6),
+    maxWordsPerCaption,
+    maxLinesPerSub: 1,
+    maxWordsPerLine: maxWordsPerCaption,
     maxCharsPerLine: 999,
     maxSubDuration: safeNumber(readSliderValue("maxSubDuration"), 5),
     minSubDuration: safeNumber(readSliderValue("minSubDuration"), 0),
@@ -1029,8 +1035,7 @@ function restoreSettings() {
   setSlider("subtitleOffset", s.subtitleOffsetMs != null ? s.subtitleOffsetMs : 0, "ms");
   const langSel = document.getElementById("srt-language");
   if (langSel && s.language) langSel.value = s.language;
-  setStepperVal("maxLinesPerSub", s.maxLinesPerSub);
-  setStepperVal("maxWordsPerLine", s.maxWordsPerLine);
+  setStepperVal("maxWordsPerCaption", s.maxWordsPerCaption != null ? s.maxWordsPerCaption : s.maxWordsPerLine);
   setCheckbox("detectBreaths", s.detectBreaths);
   setCheckbox("splitOnSentence", s.splitOnSentence);
   setCheckbox("splitOnPause", s.splitOnPause);

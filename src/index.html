@@ -1584,21 +1584,11 @@ body.no-key .tab-content { display: none; }
       <div class="section-title">Altyazi Bicimi</div>
 
       <div class="row">
-        <label class="label-wide">Altyazı satır sayısı <span class="label-hint">(1-3)</span></label>
+        <label class="label-wide">Ekranda kelime sayısı <span class="label-hint">(1-12)</span></label>
         <div class="stepper">
-          <button class="stepper-btn" data-target="maxLinesPerSub" data-dir="-1">-</button>
-          <span class="stepper-value" id="maxLinesPerSub-val">2</span>
-          <button class="stepper-btn" data-target="maxLinesPerSub" data-dir="1">+</button>
-        </div>
-        <span></span>
-      </div>
-
-      <div class="row">
-        <label class="label-wide">Satır başına kelime <span class="label-hint">(2-12)</span></label>
-        <div class="stepper">
-          <button class="stepper-btn" data-target="maxWordsPerLine" data-dir="-1">-</button>
-          <span class="stepper-value" id="maxWordsPerLine-val">6</span>
-          <button class="stepper-btn" data-target="maxWordsPerLine" data-dir="1">+</button>
+          <button class="stepper-btn" data-target="maxWordsPerCaption" data-dir="-1">-</button>
+          <span class="stepper-value" id="maxWordsPerCaption-val">6</span>
+          <button class="stepper-btn" data-target="maxWordsPerCaption" data-dir="1">+</button>
         </div>
         <span></span>
       </div>
@@ -1788,9 +1778,11 @@ body.no-key .tab-content { display: none; }
         language: "tr",
         subtitleOffsetMs: 0,
         // auto-offset varsayılan; slider sadece ince ayar için
-        maxLinesPerSub: 2,
+        maxWordsPerCaption: 6,
+        // Legacy keys: eski localStorage kayıtları ve eski grouper çağrıları bozulmasın.
+        maxLinesPerSub: 1,
         maxWordsPerLine: 6,
-        maxCharsPerLine: 42,
+        maxCharsPerLine: 999,
         maxSubDuration: 5,
         minSubDuration: 0,
         cpsLimit: 20,
@@ -1805,7 +1797,7 @@ body.no-key .tab-content { display: none; }
             const stored = localStorage.getItem(STORAGE_KEY);
             if (stored) {
               const parsed = JSON.parse(stored);
-              _settings = { ...DEFAULTS, ...parsed };
+              _settings = migrateSettings({ ...DEFAULTS, ...parsed });
             }
           }
         } catch (e) {
@@ -1815,7 +1807,7 @@ body.no-key .tab-content { display: none; }
         return _settings;
       }
       function save(updates) {
-        _settings = { ...DEFAULTS, ..._settings, ...updates };
+        _settings = migrateSettings({ ...DEFAULTS, ..._settings, ...updates });
         try {
           if (typeof localStorage !== "undefined") {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(_settings));
@@ -1824,6 +1816,16 @@ body.no-key .tab-content { display: none; }
           console.warn("Ayarlar kaydedilemedi:", e);
         }
         return _settings;
+      }
+      function migrateSettings(settings) {
+        const next = { ...settings };
+        if (next.maxWordsPerCaption == null) {
+          next.maxWordsPerCaption = next.maxWordsPerLine != null ? next.maxWordsPerLine : DEFAULTS.maxWordsPerCaption;
+        }
+        next.maxWordsPerLine = next.maxWordsPerCaption;
+        next.maxLinesPerSub = 1;
+        next.maxCharsPerLine = 999;
+        return next;
       }
       function get() {
         return { ..._settings };
@@ -2432,37 +2434,34 @@ body.no-key .tab-content { display: none; }
   // src/srt/caption-grouper.js
   var require_caption_grouper = __commonJS({
     "src/srt/caption-grouper.js"(exports, module) {
-      function group(words, {
-        maxLinesPerSub = 2,
-        maxWordsPerLine = 6,
-        maxCharsPerLine = 999,
-        // devre disi: kelime sayisi tek kontrol
-        maxSubDuration = 5,
-        minSubDuration = 1,
-        cpsLimit = 20,
-        splitOnSentence = true,
-        splitOnPause = true
-      } = {}) {
+      function group(words, options = {}) {
         if (!words || words.length === 0) return [];
+        const maxWordsPerCaption = clampInt(
+          options.maxWordsPerCaption != null ? options.maxWordsPerCaption : options.maxWordsPerLine,
+          6,
+          1,
+          50
+        );
+        const maxSubDuration = Number.isFinite(Number(options.maxSubDuration)) ? Number(options.maxSubDuration) : 5;
+        const minSubDuration = Number.isFinite(Number(options.minSubDuration)) ? Number(options.minSubDuration) : 1;
+        const cpsLimit = Number.isFinite(Number(options.cpsLimit)) ? Number(options.cpsLimit) : 20;
+        const splitOnSentence = options.splitOnSentence !== false;
+        const splitOnPause = options.splitOnPause !== false;
         const captions = [];
-        let currentLines = [];
-        let currentLineWords = [];
+        let currentWords = [];
         let captionStart = null;
         const flush = (endTime) => {
-          if (currentLineWords.length > 0) {
-            currentLines.push(currentLineWords.join(" "));
-            currentLineWords = [];
-          }
-          if (currentLines.length === 0) return;
+          if (currentWords.length === 0) return;
           if (captionStart === null) return;
+          const text = currentWords.join(" ");
           captions.push({
             index: captions.length + 1,
             start: captionStart,
             end: endTime,
-            lines: [...currentLines],
-            text: currentLines.join("\n")
+            lines: [text],
+            text
           });
-          currentLines = [];
+          currentWords = [];
           captionStart = null;
         };
         for (let i = 0; i < words.length; i++) {
@@ -2470,17 +2469,10 @@ body.no-key .tab-content { display: none; }
           const wordText = (word.text || "").trim();
           if (!wordText) continue;
           if (captionStart === null) captionStart = word.start;
-          currentLineWords.push(wordText);
-          const lineFull = currentLineWords.length >= maxWordsPerLine;
-          const lineJoined = currentLineWords.join(" ");
-          const charFull = lineJoined.length >= maxCharsPerLine;
-          if (lineFull || charFull) {
-            currentLines.push(lineJoined);
-            currentLineWords = [];
-            if (currentLines.length >= maxLinesPerSub) {
-              flush(word.end);
-              continue;
-            }
+          currentWords.push(wordText);
+          if (currentWords.length >= maxWordsPerCaption) {
+            flush(word.end);
+            continue;
           }
           const duration = word.end - captionStart;
           if (duration >= maxSubDuration) {
@@ -2502,6 +2494,11 @@ body.no-key .tab-content { display: none; }
         const last = words[words.length - 1];
         if (last) flush(last.end);
         return applyCPSLimit(captions, cpsLimit, minSubDuration);
+      }
+      function clampInt(value, fallback, min, max) {
+        const n = parseInt(value, 10);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.max(min, Math.min(max, n));
       }
       function applyCPSLimit(captions, cpsLimit, minDur) {
         return captions.map((cap, index) => {
@@ -2786,15 +2783,26 @@ ${cap.text}`;
                     for (const kt of kfTimes) {
                       if (!kt || typeof kt.seconds !== "number") continue;
                       let value = null;
+                      let interpolationMode = null;
                       if (typeof param.getValueAtTime === "function") {
                         try {
                           value = await param.getValueAtTime(kt);
                         } catch {
                         }
                       }
+                      if (typeof param.getKeyframePtr === "function") {
+                        try {
+                          const kfPtr = await param.getKeyframePtr(kt);
+                          if (kfPtr && typeof kfPtr.getTemporalInterpolationMode === "function") {
+                            interpolationMode = await kfPtr.getTemporalInterpolationMode();
+                          }
+                        } catch {
+                        }
+                      }
                       keyframes.push({
                         sourceSeconds: kt.seconds - tiStart + tiInPoint,
-                        value
+                        value,
+                        interpolationMode
                       });
                     }
                   } catch (e) {
@@ -2913,14 +2921,14 @@ ${cap.text}`;
             }
             for (const kf of filtered) {
               try {
-                const kfObj = await param.createKeyframe(kf.value);
-                if (!kfObj) continue;
                 const timelineSec = newTimelineStart + (kf.sourceSeconds - newSourceIn);
-                try {
-                  kfObj.position = ppro.TickTime.createWithSeconds(timelineSec);
-                } catch (e) {
-                  console.warn("[effects/apply] kf.position set fail:", e.message);
-                  continue;
+                const kfObj = await createKeyframeForValue(ppro, param, kf.value, timelineSec);
+                if (!kfObj) continue;
+                if (Number.isFinite(kf.interpolationMode) && typeof kfObj.setTemporalInterpolationMode === "function") {
+                  try {
+                    await kfObj.setTemporalInterpolationMode(kf.interpolationMode);
+                  } catch {
+                  }
                 }
                 const addAction = await param.createAddKeyframeAction(kfObj);
                 if (addAction) actions.push(addAction);
@@ -2930,7 +2938,7 @@ ${cap.text}`;
             }
           } else if (paramSnap.staticValue != null) {
             try {
-              const a = await safeCall(param.createSetValueAction, param, paramSnap.staticValue);
+              const a = await createSetValueActionForValue(ppro, param, paramSnap.staticValue);
               if (a) actions.push(a);
             } catch (e) {
               console.warn("[effects/apply] setValue (clamp) fail:", e.message);
@@ -2938,13 +2946,126 @@ ${cap.text}`;
           }
         } else if (paramSnap.staticValue != null) {
           try {
-            const a = await safeCall(param.createSetValueAction, param, paramSnap.staticValue);
+            const a = await createSetValueActionForValue(ppro, param, paramSnap.staticValue);
             if (a) actions.push(a);
           } catch (e) {
             console.warn("[effects/apply] setValue fail:", e.message);
           }
         }
         return actions;
+      }
+      async function createSetValueActionForValue(ppro, param, value) {
+        const kfObj = await createKeyframeForValue(ppro, param, value);
+        if (!kfObj) return null;
+        return await safeCall(param.createSetValueAction, param, kfObj, true) || await safeCall(param.createSetValueAction, param, kfObj) || await safeCall(param.createSetValueAction, param, value, true) || await safeCall(param.createSetValueAction, param, value);
+      }
+      async function createKeyframeForValue(ppro, param, value, timelineSec) {
+        if (value === void 0 || value === null || typeof param.createKeyframe !== "function") {
+          return null;
+        }
+        let lastError = null;
+        for (const candidate of getValueCandidates(ppro, value)) {
+          try {
+            const kfObj = await param.createKeyframe(candidate);
+            if (!kfObj) continue;
+            if (Number.isFinite(timelineSec)) {
+              kfObj.position = ppro.TickTime.createWithSeconds(timelineSec);
+            }
+            return kfObj;
+          } catch (e) {
+            lastError = e;
+          }
+        }
+        if (lastError) {
+          console.warn("[effects/apply] createKeyframe fail:", describeValue(value), lastError.message);
+        }
+        return null;
+      }
+      function getValueCandidates(ppro, value) {
+        const candidates = [];
+        const seen = [];
+        const push = (v) => {
+          if (v === void 0 || v === null) return;
+          if (seen.includes(v)) return;
+          seen.push(v);
+          candidates.push(v);
+        };
+        push(value);
+        if (Array.isArray(value)) {
+          if (value.length >= 2) push(makePointF(ppro, value[0], value[1]));
+          if (value.length >= 4) push(makeColor(ppro, value[0], value[1], value[2], value[3]));
+        } else if (value && typeof value === "object") {
+          const x = firstFinite(value.x, value.X, value.horizontal, value.h, value[0]);
+          const y = firstFinite(value.y, value.Y, value.vertical, value.v, value[1]);
+          if (Number.isFinite(x) && Number.isFinite(y)) push(makePointF(ppro, x, y));
+          const r = firstFinite(value.red, value.r, value[0]);
+          const g = firstFinite(value.green, value.g, value[1]);
+          const b = firstFinite(value.blue, value.b, value[2]);
+          const a = firstFinite(value.alpha, value.a, value[3], 1);
+          if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
+            push(makeColor(ppro, r, g, b, a));
+          }
+          if (value.value !== void 0 && value.value !== value) push(value.value);
+        }
+        return candidates;
+      }
+      function makePointF(ppro, x, y) {
+        const Ctor = ppro && ppro.PointF;
+        if (typeof Ctor !== "function") return null;
+        try {
+          const pt = new Ctor(x, y);
+          pt.x = Number(x);
+          pt.y = Number(y);
+          return pt;
+        } catch {
+        }
+        try {
+          const pt = new Ctor();
+          pt.x = Number(x);
+          pt.y = Number(y);
+          return pt;
+        } catch {
+        }
+        return null;
+      }
+      function makeColor(ppro, red, green, blue, alpha) {
+        const Ctor = ppro && ppro.Color;
+        if (typeof Ctor !== "function") return null;
+        const safeAlpha = Number.isFinite(Number(alpha)) ? Number(alpha) : 1;
+        try {
+          const color = new Ctor(red, green, blue, safeAlpha);
+          color.red = Number(red);
+          color.green = Number(green);
+          color.blue = Number(blue);
+          color.alpha = safeAlpha;
+          return color;
+        } catch {
+        }
+        try {
+          const color = new Ctor();
+          color.red = Number(red);
+          color.green = Number(green);
+          color.blue = Number(blue);
+          color.alpha = safeAlpha;
+          return color;
+        } catch {
+        }
+        return null;
+      }
+      function firstFinite(...values) {
+        for (const value of values) {
+          const n = Number(value);
+          if (Number.isFinite(n)) return n;
+        }
+        return NaN;
+      }
+      function describeValue(value) {
+        if (value === null) return "null";
+        if (value === void 0) return "undefined";
+        if (typeof value !== "object") return `${typeof value}:${String(value)}`;
+        const ctor = value.constructor && value.constructor.name ? value.constructor.name : "object";
+        const keys = Object.keys(value).slice(0, 6).join(",");
+        return `${ctor}{${keys}}`;
       }
       function isVideoMediaType(ppro, mediaType) {
         try {
@@ -3650,8 +3771,7 @@ ${cap.text}`;
   }
   function setupSteppers() {
     const stepperConfig = {
-      maxLinesPerSub: { min: 1, max: 3 },
-      maxWordsPerLine: { min: 2, max: 12 }
+      maxWordsPerCaption: { min: 1, max: 12 }
     };
     document.querySelectorAll(".stepper-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -4218,9 +4338,14 @@ ${cap.text}`;
   function safeNumber(val, fallback) {
     return typeof val === "number" && isFinite(val) ? val : fallback;
   }
+  function readStepperInt(id, fallback) {
+    const el = document.getElementById(`${id}-val`);
+    return safeNumber(parseInt(el && el.textContent, 10), fallback);
+  }
   function getCurrentSettings() {
     const paddingMs = safeNumber(readSliderValue("padding"), 150);
     const langSel = document.getElementById("srt-language");
+    const maxWordsPerCaption = readStepperInt("maxWordsPerCaption", 6);
     return {
       silenceThreshold: safeNumber(parseInt(readSliderValue("silenceThreshold")), -40),
       minSilenceDuration: safeNumber(readSliderValue("minSilenceDuration"), 0.4),
@@ -4228,8 +4353,9 @@ ${cap.text}`;
       paddingAfter: paddingMs / 1e3,
       detectBreaths: document.getElementById("detectBreaths").checked,
       minKeepDuration: safeNumber(readSliderValue("minKeepDuration"), 0.3),
-      maxLinesPerSub: safeNumber(parseInt(document.getElementById("maxLinesPerSub-val").textContent), 2),
-      maxWordsPerLine: safeNumber(parseInt(document.getElementById("maxWordsPerLine-val").textContent), 6),
+      maxWordsPerCaption,
+      maxLinesPerSub: 1,
+      maxWordsPerLine: maxWordsPerCaption,
       maxCharsPerLine: 999,
       maxSubDuration: safeNumber(readSliderValue("maxSubDuration"), 5),
       minSubDuration: safeNumber(readSliderValue("minSubDuration"), 0),
@@ -4256,8 +4382,7 @@ ${cap.text}`;
     setSlider("subtitleOffset", s.subtitleOffsetMs != null ? s.subtitleOffsetMs : 0, "ms");
     const langSel = document.getElementById("srt-language");
     if (langSel && s.language) langSel.value = s.language;
-    setStepperVal("maxLinesPerSub", s.maxLinesPerSub);
-    setStepperVal("maxWordsPerLine", s.maxWordsPerLine);
+    setStepperVal("maxWordsPerCaption", s.maxWordsPerCaption != null ? s.maxWordsPerCaption : s.maxWordsPerLine);
     setCheckbox("detectBreaths", s.detectBreaths);
     setCheckbox("splitOnSentence", s.splitOnSentence);
     setCheckbox("splitOnPause", s.splitOnPause);
