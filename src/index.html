@@ -235,6 +235,15 @@ body > * { position: relative; z-index: 2; }
 .icon-btn:hover svg { stroke: var(--accent); }
 
 /* ---------- Tabs ---------- */
+/* UXP webview tüm <button> elementlerine UA stylesheet uyguluyor —
+ * gri/beyaz inset overlay, focus ring, varsayılan padding. Universal reset. */
+button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  outline: none !important;
+  font: inherit;
+}
+
 .tabs {
   flex-shrink: 0;
   display: flex;
@@ -274,9 +283,9 @@ body > * { position: relative; z-index: 2; }
   border-radius: 2px;
   box-shadow: 0 0 8px var(--accent-glow);
 }
-.tab:hover { color: var(--ink-200); background: rgba(255, 255, 255, 0.02) !important; }
+.tab:hover { color: var(--ink-200) !important; background: rgba(255, 255, 255, 0.02) !important; }
 .tab.active {
-  color: var(--accent);
+  color: var(--accent) !important;
   background: linear-gradient(180deg, transparent 0%, var(--accent-glow-soft) 100%) !important;
 }
 .tab.active::after {
@@ -719,6 +728,9 @@ body.no-key .tab-content { display: none; }
 }
 
 /* ---------- Buttons ---------- */
+/* UXP webview <button> elementine UA stylesheet gri overlay/inset shadow
+ * uyguluyor. -webkit-appearance/appearance reset + background !important
+ * agresif şekilde override — yoksa lime accent altında gri layer kalıyor. */
 .btn {
   display: flex;
   align-items: center;
@@ -726,7 +738,7 @@ body.no-key .tab-content { display: none; }
   gap: 8px;
   width: 100%;
   padding: 12px 16px;
-  border: 0;
+  border: 0 !important;
   border-radius: var(--radius);
   font-family: var(--font-display);
   font-size: 12.5px;
@@ -738,21 +750,27 @@ body.no-key .tab-content { display: none; }
   transition: transform 0.18s var(--ease-out), box-shadow 0.22s var(--ease-out);
   position: relative;
   overflow: hidden;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  outline: none !important;
 }
+/* UXP'de transform animation bug'lı — beyaz shimmer overlay buton üzerinde
+ * statik kalabiliyor. Hover'da opacity-based ince glow ile değiştirildi. */
 .btn::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.18) 50%, transparent 70%);
-  transform: translateX(-100%);
-  transition: transform 0.6s var(--ease-out);
+  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.12) 50%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.22s var(--ease-out);
   pointer-events: none;
 }
-.btn:hover::after { transform: translateX(100%); }
+.btn:hover::after { opacity: 1; }
 
 .btn-primary {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--accent) !important;
+  background-color: var(--accent) !important;
+  color: var(--accent-ink) !important;
   box-shadow: 0 0 0 1px var(--accent), 0 6px 18px var(--accent-glow);
 }
 .btn-primary:hover {
@@ -768,16 +786,16 @@ body.no-key .tab-content { display: none; }
 }
 
 .btn-success {
-  background: linear-gradient(180deg, var(--accent), var(--accent-warm));
-  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent), var(--accent-warm)) !important;
+  color: var(--accent-ink) !important;
   box-shadow: 0 0 0 1px var(--accent), 0 6px 22px var(--accent-glow);
 }
 .btn-success:hover { transform: translateY(-1px); }
 
 .btn-ghost {
-  background: var(--surface-2);
-  color: var(--accent);
-  border: 1px solid rgba(212, 255, 58, 0.32);
+  background: var(--surface-2) !important;
+  color: var(--accent) !important;
+  border: 1px solid rgba(212, 255, 58, 0.32) !important;
   box-shadow: inset 0 0 0 1px transparent;
 }
 .btn-ghost:hover {
@@ -2644,6 +2662,83 @@ ${cap.text}`;
   // src/timeline/effects-preserver.js
   var require_effects_preserver = __commonJS({
     "src/timeline/effects-preserver.js"(exports, module) {
+      function logDeep(tag, msg) {
+        try {
+          const daemon2 = require_daemon();
+          daemon2.log(tag, msg);
+        } catch {
+        }
+      }
+      async function getParamValueDefensive(param, trackItem) {
+        if (typeof param.getValue === "function") {
+          try {
+            const v = await param.getValue();
+            if (v !== void 0 && v !== null) return { v, src: "getValue" };
+          } catch {
+          }
+        }
+        try {
+          const v = param.value;
+          if (v !== void 0 && v !== null) return { v, src: "value-prop" };
+        } catch {
+        }
+        if (typeof param.getValueAtTime === "function") {
+          try {
+            const ppro = __require("premierepro");
+            const startTime = await trackItem.getStartTime();
+            const t = startTime || ppro.TickTime.createWithSeconds(0);
+            const v = await param.getValueAtTime(t);
+            if (v !== void 0 && v !== null) return { v, src: "getValueAtTime" };
+          } catch {
+          }
+        }
+        return { v: null, src: "none" };
+      }
+      async function isTimeVaryingDefensive(param) {
+        if (typeof param.isTimeVarying === "function") {
+          try {
+            return !!await param.isTimeVarying();
+          } catch {
+          }
+        }
+        try {
+          return !!param.isTimeVarying;
+        } catch {
+        }
+        return false;
+      }
+      async function areKfsSupportedDefensive(param) {
+        if (typeof param.areKeyframesSupported === "function") {
+          try {
+            return !!await param.areKeyframesSupported();
+          } catch {
+          }
+        }
+        try {
+          return !!param.areKeyframesSupported;
+        } catch {
+        }
+        return false;
+      }
+      async function getKeyframeTimesDefensive(param) {
+        if (typeof param.getKeyframeListAsTickTimes === "function") {
+          try {
+            const kts = await param.getKeyframeListAsTickTimes();
+            if (Array.isArray(kts)) return kts;
+          } catch {
+          }
+        }
+        if (typeof param.getKeyframeList === "function") {
+          try {
+            const kfs = await param.getKeyframeList();
+            if (Array.isArray(kfs)) {
+              return kfs.map((k) => k && k.position).filter(Boolean);
+            }
+          } catch {
+          }
+        }
+        return [];
+      }
       async function snapshotChain(trackItem, mediaType) {
         try {
           const chain = await trackItem.getComponentChain(mediaType);
@@ -2667,7 +2762,8 @@ ${cap.text}`;
               }
               const paramCount = await safeCall(comp.getParamCount, comp);
               const params = [];
-              const safeParamCount = Number.isFinite(paramCount) ? paramCount : 0;
+              const safeParamCount = Number.isFinite(paramCount) && paramCount > 0 ? paramCount : 32;
+              logDeep("fx-snap-comp", `mt=${mediaType} comp#${i} match=${matchName} disp=${displayName} paramCount=${paramCount}`);
               for (let p = 0; p < safeParamCount; p++) {
                 let param;
                 try {
@@ -2675,45 +2771,39 @@ ${cap.text}`;
                 } catch {
                   continue;
                 }
-                if (!param) continue;
-                let supportsKf = false, isTV = false;
-                try {
-                  supportsKf = await param.areKeyframesSupported();
-                } catch {
+                if (!param) {
+                  if (!Number.isFinite(paramCount)) break;
+                  continue;
                 }
-                try {
-                  isTV = await param.isTimeVarying();
-                } catch {
-                }
-                let staticValue = null;
-                try {
-                  staticValue = await param.getValue();
-                } catch {
-                }
+                const supportsKf = await areKfsSupportedDefensive(param);
+                const isTV = await isTimeVaryingDefensive(param);
+                const valueResult = await getParamValueDefensive(param, trackItem);
+                const staticValue = valueResult.v;
                 const keyframes = [];
                 if (supportsKf && isTV) {
                   try {
-                    const kfTimes = await param.getKeyframeListAsTickTimes();
-                    if (Array.isArray(kfTimes)) {
-                      for (const kt of kfTimes) {
-                        if (!kt || typeof kt.seconds !== "number") continue;
-                        let value = null;
+                    const kfTimes = await getKeyframeTimesDefensive(param);
+                    for (const kt of kfTimes) {
+                      if (!kt || typeof kt.seconds !== "number") continue;
+                      let value = null;
+                      if (typeof param.getValueAtTime === "function") {
                         try {
                           value = await param.getValueAtTime(kt);
                         } catch {
-                          continue;
                         }
-                        keyframes.push({
-                          sourceSeconds: kt.seconds - tiStart + tiInPoint,
-                          value
-                        });
                       }
+                      keyframes.push({
+                        sourceSeconds: kt.seconds - tiStart + tiInPoint,
+                        value
+                      });
                     }
                   } catch (e) {
                     console.warn("[effects/snapshot] keyframe read fail:", e.message);
                   }
                 }
-                if (keyframes.length === 0 && staticValue == null) continue;
+                if (i === 0 && p < 6) {
+                  logDeep("fx-snap-param", `comp#${i} p=${p} valSrc=${valueResult.src} val=${staticValue !== null ? "set" : "null"} supKf=${supportsKf} isTV=${isTV} kfs=${keyframes.length}`);
+                }
                 params.push({
                   paramIndex: p,
                   isTimeVarying: !!isTV && keyframes.length > 0,
@@ -2889,6 +2979,14 @@ ${cap.text}`;
       var seqEditor2 = require_sequence_editor();
       var mapper = require_timeline_mapper();
       var effectsPreserver = require_effects_preserver();
+      function logFx(tag, msg) {
+        try {
+          const daemon2 = require_daemon();
+          daemon2.log(tag, msg);
+        } catch {
+        }
+        console.log(`[${tag}]`, msg);
+      }
       async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, onStage) {
         const ppro = __require("premierepro");
         const stageLog = (msg) => {
@@ -2929,6 +3027,7 @@ ${cap.text}`;
         }
         let stage = "baslangic";
         const effectsByMetaIndex = /* @__PURE__ */ new Map();
+        logFx("fx-phase0-start", `clipsMeta=${clipsMeta.length} V=${videoItems.length} A=${audioItems.length} mtV=${mediaTypeVideo} mtA=${mediaTypeAudio}`);
         try {
           for (let j = 0; j < clipsMeta.length; j++) {
             const meta = clipsMeta[j];
@@ -2936,20 +3035,26 @@ ${cap.text}`;
             const matchVideo = videoItems.find((vi) => Number(vi.trackIndex) === Number(meta.trackIndex) && Math.abs(vi.start - (meta.timelineStart || 0)) < 0.05);
             const matchAudio = audioItems.find((ai) => Math.abs(ai.start - (meta.timelineStart || 0)) < 0.05);
             const entry = {};
+            let vCompCount = -1, aCompCount = -1;
             if (matchVideo) {
               const snap = await effectsPreserver.snapshotChain(matchVideo.item, mediaTypeVideo);
+              vCompCount = snap && snap.components ? snap.components.length : 0;
               if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.video = snap;
             }
             if (matchAudio) {
               const snap = await effectsPreserver.snapshotChain(matchAudio.item, mediaTypeAudio);
+              aCompCount = snap && snap.components ? snap.components.length : 0;
               if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.audio = snap;
             }
+            logFx("fx-snap", `meta#${j} path=${(meta.path || "").split("/").pop()} tlStart=${(meta.timelineStart || 0).toFixed(3)} trk=${meta.trackIndex} matchV=${!!matchVideo} matchA=${!!matchAudio} V.comp=${vCompCount} A.comp=${aCompCount} stored=${!!(entry.video || entry.audio)}`);
             if (entry.video || entry.audio) effectsByMetaIndex.set(j, entry);
           }
+          logFx("fx-phase0-end", `snapshots=${effectsByMetaIndex.size}`);
           if (effectsByMetaIndex.size > 0) {
             stageLog(`Effects snapshot: ${effectsByMetaIndex.size} klip i\xE7in kay\u0131t al\u0131nd\u0131`);
           }
         } catch (e) {
+          logFx("fx-phase0-fail", e.message);
           console.warn("[reconstructor] effects snapshot loop fail:", e.message);
         }
         try {
@@ -3050,10 +3155,12 @@ ${cap.text}`;
             try {
               const metaIdx = piece.originalIndex;
               const entry = metaIdx != null ? effectsByMetaIndex.get(metaIdx) : null;
+              logFx("fx-apply-lookup", `seg=${segmentNumber} pieceMetaIdx=${metaIdx} hasEntry=${!!entry} V.snap=${!!(entry && entry.video)} A.snap=${!!(entry && entry.audio)}`);
               if (entry && (entry.video || entry.audio)) {
                 const afterInsert = await seqEditor2.getTrackItems(sequence);
                 const newVideoItem = afterInsert.videoItems.filter((vi) => vi.trackIndex === videoTrackIdx).sort((a, b) => b.start - a.start)[0];
                 const newAudioItem = afterInsert.audioItems.filter((ai) => ai.trackIndex === audioTrackIdx).sort((a, b) => b.start - a.start)[0];
+                logFx("fx-apply-newitem", `seg=${segmentNumber} newV=${!!newVideoItem} newA=${!!newAudioItem} sourceIn=${piece.sourceIn.toFixed(3)} sourceOut=${piece.sourceOut.toFixed(3)} newTLstart=${newVideoItem ? newVideoItem.start.toFixed(3) : "?"}`);
                 if (entry.video && newVideoItem) {
                   const ctx = {
                     mediaType: mediaTypeVideo,
@@ -3062,10 +3169,13 @@ ${cap.text}`;
                     newTimelineStart: newVideoItem.start
                   };
                   const effActions = await effectsPreserver.buildApplyActions(ppro, newVideoItem.item, entry.video, ctx);
+                  logFx("fx-apply-V-actions", `seg=${segmentNumber} actions=${effActions.length}`);
                   if (effActions.length > 0) {
                     try {
                       runActionTransaction(project, `PremierSEYO: Apply effects ${segmentNumber} V`, () => effActions);
+                      logFx("fx-apply-V-ok", `seg=${segmentNumber}`);
                     } catch (e) {
+                      logFx("fx-apply-V-fail", `seg=${segmentNumber} err=${e.message}`);
                       console.warn(`[effects] video apply ${segmentNumber} fail:`, e.message);
                     }
                   }
@@ -3078,16 +3188,20 @@ ${cap.text}`;
                     newTimelineStart: newAudioItem.start
                   };
                   const effActions = await effectsPreserver.buildApplyActions(ppro, newAudioItem.item, entry.audio, ctx);
+                  logFx("fx-apply-A-actions", `seg=${segmentNumber} actions=${effActions.length}`);
                   if (effActions.length > 0) {
                     try {
                       runActionTransaction(project, `PremierSEYO: Apply effects ${segmentNumber} A`, () => effActions);
+                      logFx("fx-apply-A-ok", `seg=${segmentNumber}`);
                     } catch (e) {
+                      logFx("fx-apply-A-fail", `seg=${segmentNumber} err=${e.message}`);
                       console.warn(`[effects] audio apply ${segmentNumber} fail:`, e.message);
                     }
                   }
                 }
               }
             } catch (e) {
+              logFx("fx-apply-phase-fail", `seg=${segmentNumber} err=${e.message}`);
               console.warn("[effects] apply phase fail:", e.message);
             }
             successCount++;
@@ -3286,7 +3400,7 @@ ${cap.text}`;
     } catch {
     }
   }
-  _earlyStatus("JS yukleniyor...");
+  _earlyStatus("PremierSEYO v1.2.1 yukleniyor...");
   var config;
   var daemon;
   var timeUtils;
@@ -3325,6 +3439,8 @@ ${cap.text}`;
   var transcriptResult = null;
   var currentAudioPath = null;
   var settingsHydrated = false;
+  var SRT_SLIDER_IDS = /* @__PURE__ */ new Set(["maxSubDuration", "minSubDuration", "cpsLimit", "subtitleOffset"]);
+  var SRT_PERSISTED_IDS = /* @__PURE__ */ new Set(["splitOnSentence", "splitOnPause"]);
   function init() {
     try {
       _earlyStatus("Init basladi");
@@ -3394,7 +3510,9 @@ ${cap.text}`;
       const applyChange = () => {
         valueEl.textContent = formatValue(slider.dataset.value) + suffix;
         saveCurrentSettings();
-        if (SRT_SLIDER_IDS.has(id)) debouncedRerenderCaptions();
+        if (transcriptResult && SRT_SLIDER_IDS.has(id) && typeof debouncedRerenderCaptions === "function") {
+          debouncedRerenderCaptions();
+        }
       };
       slider.addEventListener("input", applyChange);
       slider.addEventListener("change", applyChange);
@@ -3546,7 +3664,7 @@ ${cap.text}`;
         val = Math.max(conf.min, Math.min(conf.max, val));
         valEl.textContent = val;
         saveCurrentSettings();
-        rerenderCaptions();
+        if (transcriptResult && typeof rerenderCaptions === "function") rerenderCaptions();
       });
     });
   }
@@ -3563,7 +3681,9 @@ ${cap.text}`;
       if (!el) return;
       el.addEventListener("change", () => {
         saveCurrentSettings();
-        if (SRT_PERSISTED_IDS.has(id)) rerenderCaptions();
+        if (transcriptResult && SRT_PERSISTED_IDS.has(id) && typeof rerenderCaptions === "function") {
+          rerenderCaptions();
+        }
       });
     });
   }
@@ -3887,8 +4007,6 @@ ${cap.text}`;
     };
   }
   var debouncedRerenderCaptions = debounce(rerenderCaptions, 250);
-  var SRT_SLIDER_IDS = /* @__PURE__ */ new Set(["maxSubDuration", "minSubDuration", "cpsLimit", "subtitleOffset"]);
-  var SRT_PERSISTED_IDS = /* @__PURE__ */ new Set(["splitOnSentence", "splitOnPause"]);
   function isMeaningfulWordText(text) {
     if (!text) return false;
     const stripped = String(text).replace(/[\s\.,!?;:…\-"'`()\[\]{}]+/g, "");

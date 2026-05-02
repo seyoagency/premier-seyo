@@ -231,6 +231,15 @@ body > * { position: relative; z-index: 2; }
 .icon-btn:hover svg { stroke: var(--accent); }
 
 /* ---------- Tabs ---------- */
+/* UXP webview tüm <button> elementlerine UA stylesheet uyguluyor —
+ * gri/beyaz inset overlay, focus ring, varsayılan padding. Universal reset. */
+button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  outline: none !important;
+  font: inherit;
+}
+
 .tabs {
   flex-shrink: 0;
   display: flex;
@@ -270,9 +279,9 @@ body > * { position: relative; z-index: 2; }
   border-radius: 2px;
   box-shadow: 0 0 8px var(--accent-glow);
 }
-.tab:hover { color: var(--ink-200); background: rgba(255, 255, 255, 0.02) !important; }
+.tab:hover { color: var(--ink-200) !important; background: rgba(255, 255, 255, 0.02) !important; }
 .tab.active {
-  color: var(--accent);
+  color: var(--accent) !important;
   background: linear-gradient(180deg, transparent 0%, var(--accent-glow-soft) 100%) !important;
 }
 .tab.active::after {
@@ -715,6 +724,9 @@ body.no-key .tab-content { display: none; }
 }
 
 /* ---------- Buttons ---------- */
+/* UXP webview <button> elementine UA stylesheet gri overlay/inset shadow
+ * uyguluyor. -webkit-appearance/appearance reset + background !important
+ * agresif şekilde override — yoksa lime accent altında gri layer kalıyor. */
 .btn {
   display: flex;
   align-items: center;
@@ -722,7 +734,7 @@ body.no-key .tab-content { display: none; }
   gap: 8px;
   width: 100%;
   padding: 12px 16px;
-  border: 0;
+  border: 0 !important;
   border-radius: var(--radius);
   font-family: var(--font-display);
   font-size: 12.5px;
@@ -734,21 +746,27 @@ body.no-key .tab-content { display: none; }
   transition: transform 0.18s var(--ease-out), box-shadow 0.22s var(--ease-out);
   position: relative;
   overflow: hidden;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  outline: none !important;
 }
+/* UXP'de transform animation bug'lı — beyaz shimmer overlay buton üzerinde
+ * statik kalabiliyor. Hover'da opacity-based ince glow ile değiştirildi. */
 .btn::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.18) 50%, transparent 70%);
-  transform: translateX(-100%);
-  transition: transform 0.6s var(--ease-out);
+  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.12) 50%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.22s var(--ease-out);
   pointer-events: none;
 }
-.btn:hover::after { transform: translateX(100%); }
+.btn:hover::after { opacity: 1; }
 
 .btn-primary {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--accent) !important;
+  background-color: var(--accent) !important;
+  color: var(--accent-ink) !important;
   box-shadow: 0 0 0 1px var(--accent), 0 6px 18px var(--accent-glow);
 }
 .btn-primary:hover {
@@ -764,16 +782,16 @@ body.no-key .tab-content { display: none; }
 }
 
 .btn-success {
-  background: linear-gradient(180deg, var(--accent), var(--accent-warm));
-  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent), var(--accent-warm)) !important;
+  color: var(--accent-ink) !important;
   box-shadow: 0 0 0 1px var(--accent), 0 6px 22px var(--accent-glow);
 }
 .btn-success:hover { transform: translateY(-1px); }
 
 .btn-ghost {
-  background: var(--surface-2);
-  color: var(--accent);
-  border: 1px solid rgba(212, 255, 58, 0.32);
+  background: var(--surface-2) !important;
+  color: var(--accent) !important;
+  border: 1px solid rgba(212, 255, 58, 0.32) !important;
   box-shadow: inset 0 0 0 1px transparent;
 }
 .btn-ghost:hover {

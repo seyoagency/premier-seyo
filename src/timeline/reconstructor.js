@@ -27,6 +27,16 @@ const seqEditor = require("./sequence-editor");
 const mapper = require("./timeline-mapper");
 const effectsPreserver = require("./effects-preserver");
 
+// Daemon log helper — effects flow'u remote loglama için (kullanıcı testinde
+// runtime davranışını görebilmek için). Hata olursa silent skip.
+function logFx(tag, msg) {
+  try {
+    const daemon = require("../utils/daemon");
+    daemon.log(tag, msg);
+  } catch {}
+  console.log(`[${tag}]`, msg);
+}
+
 async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, onStage) {
   const ppro = require("premierepro");
   const stageLog = (msg) => { if (typeof onStage === "function") onStage(msg); };
@@ -88,6 +98,7 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
   // pieceyle eşleşen snapshot yeni TrackItem'a uygulanır.
   // Hata toleransı: snapshot başarısızsa kesim akışı bozulmaz.
   const effectsByMetaIndex = new Map();
+  logFx("fx-phase0-start", `clipsMeta=${clipsMeta.length} V=${videoItems.length} A=${audioItems.length} mtV=${mediaTypeVideo} mtA=${mediaTypeAudio}`);
   try {
     for (let j = 0; j < clipsMeta.length; j++) {
       const meta = clipsMeta[j];
@@ -100,20 +111,26 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
         Math.abs(ai.start - (meta.timelineStart || 0)) < 0.05
       ));
       const entry = {};
+      let vCompCount = -1, aCompCount = -1;
       if (matchVideo) {
         const snap = await effectsPreserver.snapshotChain(matchVideo.item, mediaTypeVideo);
+        vCompCount = (snap && snap.components) ? snap.components.length : 0;
         if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.video = snap;
       }
       if (matchAudio) {
         const snap = await effectsPreserver.snapshotChain(matchAudio.item, mediaTypeAudio);
+        aCompCount = (snap && snap.components) ? snap.components.length : 0;
         if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.audio = snap;
       }
+      logFx("fx-snap", `meta#${j} path=${(meta.path||"").split("/").pop()} tlStart=${(meta.timelineStart||0).toFixed(3)} trk=${meta.trackIndex} matchV=${!!matchVideo} matchA=${!!matchAudio} V.comp=${vCompCount} A.comp=${aCompCount} stored=${!!(entry.video||entry.audio)}`);
       if (entry.video || entry.audio) effectsByMetaIndex.set(j, entry);
     }
+    logFx("fx-phase0-end", `snapshots=${effectsByMetaIndex.size}`);
     if (effectsByMetaIndex.size > 0) {
       stageLog(`Effects snapshot: ${effectsByMetaIndex.size} klip için kayıt alındı`);
     }
   } catch (e) {
+    logFx("fx-phase0-fail", e.message);
     console.warn("[reconstructor] effects snapshot loop fail:", e.message);
   }
 
@@ -246,6 +263,7 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
       try {
         const metaIdx = piece.originalIndex;
         const entry = (metaIdx != null) ? effectsByMetaIndex.get(metaIdx) : null;
+        logFx("fx-apply-lookup", `seg=${segmentNumber} pieceMetaIdx=${metaIdx} hasEntry=${!!entry} V.snap=${!!(entry && entry.video)} A.snap=${!!(entry && entry.audio)}`);
         if (entry && (entry.video || entry.audio)) {
           const afterInsert = await seqEditor.getTrackItems(sequence);
           // En yeni track item'ı = belirli track içinde max start (insert ripple
@@ -257,6 +275,8 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
             .filter((ai) => ai.trackIndex === audioTrackIdx)
             .sort((a, b) => b.start - a.start)[0];
 
+          logFx("fx-apply-newitem", `seg=${segmentNumber} newV=${!!newVideoItem} newA=${!!newAudioItem} sourceIn=${piece.sourceIn.toFixed(3)} sourceOut=${piece.sourceOut.toFixed(3)} newTLstart=${newVideoItem ? newVideoItem.start.toFixed(3) : '?'}`);
+
           if (entry.video && newVideoItem) {
             const ctx = {
               mediaType: mediaTypeVideo,
@@ -265,10 +285,13 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
               newTimelineStart: newVideoItem.start,
             };
             const effActions = await effectsPreserver.buildApplyActions(ppro, newVideoItem.item, entry.video, ctx);
+            logFx("fx-apply-V-actions", `seg=${segmentNumber} actions=${effActions.length}`);
             if (effActions.length > 0) {
               try {
                 runActionTransaction(project, `PremierSEYO: Apply effects ${segmentNumber} V`, () => effActions);
+                logFx("fx-apply-V-ok", `seg=${segmentNumber}`);
               } catch (e) {
+                logFx("fx-apply-V-fail", `seg=${segmentNumber} err=${e.message}`);
                 console.warn(`[effects] video apply ${segmentNumber} fail:`, e.message);
               }
             }
@@ -281,16 +304,20 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
               newTimelineStart: newAudioItem.start,
             };
             const effActions = await effectsPreserver.buildApplyActions(ppro, newAudioItem.item, entry.audio, ctx);
+            logFx("fx-apply-A-actions", `seg=${segmentNumber} actions=${effActions.length}`);
             if (effActions.length > 0) {
               try {
                 runActionTransaction(project, `PremierSEYO: Apply effects ${segmentNumber} A`, () => effActions);
+                logFx("fx-apply-A-ok", `seg=${segmentNumber}`);
               } catch (e) {
+                logFx("fx-apply-A-fail", `seg=${segmentNumber} err=${e.message}`);
                 console.warn(`[effects] audio apply ${segmentNumber} fail:`, e.message);
               }
             }
           }
         }
       } catch (e) {
+        logFx("fx-apply-phase-fail", `seg=${segmentNumber} err=${e.message}`);
         console.warn("[effects] apply phase fail:", e.message);
       }
 

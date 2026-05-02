@@ -10,7 +10,10 @@ function _earlyStatus(msg) {
   } catch {}
 }
 
-_earlyStatus("JS yukleniyor...");
+// v1.2.1 build signature — bu metnin status bar'da görünmesi yeni bundle'ın
+// yüklendiğinin görsel kanıtı. Önceki cache'lenen "JS yukleniyor..." görünüyorsa
+// Premiere eski bundle'ı serve ediyor demek.
+_earlyStatus("PremierSEYO v1.2.1 yukleniyor...");
 
 let config, daemon, timeUtils, audioExporter, silenceDetector, breathDetector;
 let segmentBuilder, transcriber, captionGrouper, srtWriter, vttWriter;
@@ -42,6 +45,11 @@ let analysisResult = null;
 let transcriptResult = null;
 let currentAudioPath = null;
 let settingsHydrated = false;
+
+// SRT live regroup için Set'ler — setupSliders/setupPersistedInputs init'inden
+// önce initialize olmaları gerek (applyChange ilk render'da çağrılıyor).
+const SRT_SLIDER_IDS = new Set(["maxSubDuration", "minSubDuration", "cpsLimit", "subtitleOffset"]);
+const SRT_PERSISTED_IDS = new Set(["splitOnSentence", "splitOnPause"]);
 
 // ——— Init ———
 function init() {
@@ -127,7 +135,11 @@ function setupSliders() {
       saveCurrentSettings();
       // SRT slider'ları (maxSubDuration, minSubDuration, cpsLimit, subtitleOffset)
       // değiştiğinde transcriptResult varsa preview'ı debounced regroup et.
-      if (SRT_SLIDER_IDS.has(id)) debouncedRerenderCaptions();
+      // transcriptResult null check + typeof guard: init zamanında applyChange
+      // direkt çağrılıyor, debouncedRerenderCaptions hala TDZ'de olabilir.
+      if (transcriptResult && SRT_SLIDER_IDS.has(id) && typeof debouncedRerenderCaptions === "function") {
+        debouncedRerenderCaptions();
+      }
     };
 
     slider.addEventListener("input", applyChange);
@@ -298,7 +310,7 @@ function setupSteppers() {
       valEl.textContent = val;
       saveCurrentSettings();
       // Stepper SRT'ye özel (maxLinesPerSub, maxWordsPerLine) — anında yeniden grupla.
-      rerenderCaptions();
+      if (transcriptResult && typeof rerenderCaptions === "function") rerenderCaptions();
     });
   });
 }
@@ -318,7 +330,9 @@ function setupPersistedInputs() {
     el.addEventListener("change", () => {
       saveCurrentSettings();
       // Sadece SRT-relevant checkbox'lar (splitOnSentence, splitOnPause) regroup tetikler.
-      if (SRT_PERSISTED_IDS.has(id)) rerenderCaptions();
+      if (transcriptResult && SRT_PERSISTED_IDS.has(id) && typeof rerenderCaptions === "function") {
+        rerenderCaptions();
+      }
     });
   });
 }
@@ -709,8 +723,6 @@ function debounce(fn, ms) {
 }
 
 const debouncedRerenderCaptions = debounce(rerenderCaptions, 250);
-const SRT_SLIDER_IDS = new Set(["maxSubDuration", "minSubDuration", "cpsLimit", "subtitleOffset"]);
-const SRT_PERSISTED_IDS = new Set(["splitOnSentence", "splitOnPause"]);
 
 function isMeaningfulWordText(text) {
   if (!text) return false;

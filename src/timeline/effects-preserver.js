@@ -24,6 +24,74 @@
  * bozulmamalı. Phase 0 silmeden önce çağrılır, Phase 2 insert sonrası uygulanır.
  */
 
+function logDeep(tag, msg) {
+  try {
+    const daemon = require("../utils/daemon");
+    daemon.log(tag, msg);
+  } catch {}
+}
+
+// UXP'de bazı API'ler method, bazıları property — defensive fallback chain
+async function getParamValueDefensive(param, trackItem) {
+  // 1) getValue() method
+  if (typeof param.getValue === "function") {
+    try {
+      const v = await param.getValue();
+      if (v !== undefined && v !== null) return { v, src: "getValue" };
+    } catch {}
+  }
+  // 2) value property (getter)
+  try {
+    const v = param.value;
+    if (v !== undefined && v !== null) return { v, src: "value-prop" };
+  } catch {}
+  // 3) getValueAtTime(trackItem.start) — Motion intrinsic için sıklıkla bu yöntem
+  if (typeof param.getValueAtTime === "function") {
+    try {
+      const ppro = require("premierepro");
+      const startTime = await trackItem.getStartTime();
+      const t = startTime || ppro.TickTime.createWithSeconds(0);
+      const v = await param.getValueAtTime(t);
+      if (v !== undefined && v !== null) return { v, src: "getValueAtTime" };
+    } catch {}
+  }
+  return { v: null, src: "none" };
+}
+
+async function isTimeVaryingDefensive(param) {
+  if (typeof param.isTimeVarying === "function") {
+    try { return !!(await param.isTimeVarying()); } catch {}
+  }
+  try { return !!param.isTimeVarying; } catch {}
+  return false;
+}
+
+async function areKfsSupportedDefensive(param) {
+  if (typeof param.areKeyframesSupported === "function") {
+    try { return !!(await param.areKeyframesSupported()); } catch {}
+  }
+  try { return !!param.areKeyframesSupported; } catch {}
+  return false;
+}
+
+async function getKeyframeTimesDefensive(param) {
+  if (typeof param.getKeyframeListAsTickTimes === "function") {
+    try {
+      const kts = await param.getKeyframeListAsTickTimes();
+      if (Array.isArray(kts)) return kts;
+    } catch {}
+  }
+  if (typeof param.getKeyframeList === "function") {
+    try {
+      const kfs = await param.getKeyframeList();
+      if (Array.isArray(kfs)) {
+        return kfs.map((k) => k && k.position).filter(Boolean);
+      }
+    } catch {}
+  }
+  return [];
+}
+
 async function snapshotChain(trackItem, mediaType) {
   try {
     const chain = await trackItem.getComponentChain(mediaType);
@@ -43,7 +111,6 @@ async function snapshotChain(trackItem, mediaType) {
         if (!comp) continue;
         const matchName = await safeCall(comp.getMatchName, comp);
         const displayName = await safeCall(comp.getDisplayName, comp);
-        // Time-remapping skip: keyframe topology farklı, scope dışı
         if (/time.*remap/i.test(String(matchName) + String(displayName))) {
           components.push({ matchName, displayName, params: [], skipped: "time-remap" });
           continue;
@@ -51,44 +118,52 @@ async function snapshotChain(trackItem, mediaType) {
 
         const paramCount = await safeCall(comp.getParamCount, comp);
         const params = [];
-        const safeParamCount = Number.isFinite(paramCount) ? paramCount : 0;
+        // UXP bazı versiyonlarda getParamCount=0 dönebilir → fallback: 32 param dene
+        const safeParamCount = (Number.isFinite(paramCount) && paramCount > 0) ? paramCount : 32;
+        logDeep("fx-snap-comp", `mt=${mediaType} comp#${i} match=${matchName} disp=${displayName} paramCount=${paramCount}`);
 
         for (let p = 0; p < safeParamCount; p++) {
           let param;
           try { param = await comp.getParam(p); } catch { continue; }
-          if (!param) continue;
+          if (!param) {
+            if (!Number.isFinite(paramCount)) break; // fallback loop'u boşa dönmesin
+            continue;
+          }
 
-          let supportsKf = false, isTV = false;
-          try { supportsKf = await param.areKeyframesSupported(); } catch {}
-          try { isTV = await param.isTimeVarying(); } catch {}
+          const supportsKf = await areKfsSupportedDefensive(param);
+          const isTV = await isTimeVaryingDefensive(param);
 
-          let staticValue = null;
-          try { staticValue = await param.getValue(); } catch {}
+          const valueResult = await getParamValueDefensive(param, trackItem);
+          const staticValue = valueResult.v;
 
           const keyframes = [];
           if (supportsKf && isTV) {
             try {
-              const kfTimes = await param.getKeyframeListAsTickTimes();
-              if (Array.isArray(kfTimes)) {
-                for (const kt of kfTimes) {
-                  if (!kt || typeof kt.seconds !== "number") continue;
-                  let value = null;
-                  try { value = await param.getValueAtTime(kt); } catch { continue; }
-                  keyframes.push({
-                    sourceSeconds: kt.seconds - tiStart + tiInPoint,
-                    value,
-                  });
+              const kfTimes = await getKeyframeTimesDefensive(param);
+              for (const kt of kfTimes) {
+                if (!kt || typeof kt.seconds !== "number") continue;
+                let value = null;
+                if (typeof param.getValueAtTime === "function") {
+                  try { value = await param.getValueAtTime(kt); } catch {}
                 }
+                keyframes.push({
+                  sourceSeconds: kt.seconds - tiStart + tiInPoint,
+                  value,
+                });
               }
             } catch (e) {
               console.warn("[effects/snapshot] keyframe read fail:", e.message);
             }
           }
 
-          // Sadece anlamlı kayıt: ya keyframes ya isTimeVarying false ile static.
-          // Boş/null staticValue + boş keyframes → atla (UXP unset param)
-          if (keyframes.length === 0 && staticValue == null) continue;
+          // Per-param diagnostic log (sadece kompakt — match için)
+          if (i === 0 && p < 6) {
+            logDeep("fx-snap-param", `comp#${i} p=${p} valSrc=${valueResult.src} val=${staticValue!==null?'set':'null'} supKf=${supportsKf} isTV=${isTV} kfs=${keyframes.length}`);
+          }
 
+          // Eskiden: keyframes.length===0 && staticValue==null → skip.
+          // Şimdi: param'ı yine kayda al — apply tarafında null'a karşı defansif.
+          // Bu şekilde clamp/restore garanti.
           params.push({
             paramIndex: p,
             isTimeVarying: !!isTV && keyframes.length > 0,

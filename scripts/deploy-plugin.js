@@ -19,6 +19,8 @@ const ROOT = path.resolve(__dirname, "..");
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf-8"));
 const PLUGIN_ID = MANIFEST.id;
 const VERSION = MANIFEST.version;
+const HOST_APP = MANIFEST.host && MANIFEST.host.app;
+const HOST_MIN_VERSION = MANIFEST.host && MANIFEST.host.minVersion;
 
 const PLUGIN_DIR = path.join(
   os.homedir(),
@@ -31,11 +33,7 @@ const PLUGIN_DIR = path.join(
   `${PLUGIN_ID}_${VERSION}`
 );
 
-if (!fs.existsSync(PLUGIN_DIR)) {
-  console.warn(`[deploy] Plugin install dizini bulunamadi: ${PLUGIN_DIR}`);
-  console.warn(`[deploy] Plugin'i UXP Developer Tool ile yuklediginizden emin olun. Skip.`);
-  process.exit(0);
-}
+fs.mkdirSync(PLUGIN_DIR, { recursive: true });
 
 const pairs = [
   { src: "manifest.json", kind: "file" },
@@ -63,5 +61,55 @@ for (const pair of pairs) {
   }
 }
 
+syncPremierePluginsInfo();
+
 console.log(`[deploy] ${PLUGIN_DIR}`);
+console.log(`[deploy] Premiere PluginsInfo kaydi guncellendi.`);
 console.log(`[deploy] Premiere Pro'yu kapatip tekrar acin (panel yeni bundle'i yukleyecek).`);
+
+function syncPremierePluginsInfo() {
+  if (HOST_APP !== "premierepro") return;
+
+  const infoDir = path.join(
+    os.homedir(),
+    "Library",
+    "Application Support",
+    "Adobe",
+    "UXP",
+    "PluginsInfo",
+    "v1"
+  );
+  const infoPath = path.join(infoDir, "premierepro.json");
+  const nextEntry = {
+    hostMinVersion: HOST_MIN_VERSION || "",
+    name: MANIFEST.name,
+    path: `$localPlugins/External/${PLUGIN_ID}_${VERSION}`,
+    pluginId: PLUGIN_ID,
+    status: "enabled",
+    type: "uxp",
+    versionString: VERSION,
+  };
+
+  fs.mkdirSync(infoDir, { recursive: true });
+
+  let info = { plugins: [] };
+  if (fs.existsSync(infoPath)) {
+    try {
+      info = JSON.parse(fs.readFileSync(infoPath, "utf-8"));
+    } catch (err) {
+      const backup = `${infoPath}.invalid-${Date.now()}`;
+      fs.copyFileSync(infoPath, backup);
+      console.warn(`[deploy] PluginsInfo JSON okunamadi, yedek alindi: ${backup}`);
+    }
+  }
+
+  if (!Array.isArray(info.plugins)) info.plugins = [];
+  const index = info.plugins.findIndex((plugin) => plugin && plugin.pluginId === PLUGIN_ID);
+  if (index >= 0) {
+    info.plugins[index] = { ...info.plugins[index], ...nextEntry };
+  } else {
+    info.plugins.push(nextEntry);
+  }
+
+  fs.writeFileSync(infoPath, JSON.stringify(info, null, 2), "utf-8");
+}
