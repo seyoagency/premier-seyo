@@ -163,6 +163,16 @@ body > * { position: relative; z-index: 2; }
   display: block;
 }
 
+.brand-logo {
+  display: block;
+  height: 40px;
+  width: auto;
+  max-width: 200px;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .header-actions {
   display: flex;
   align-items: center;

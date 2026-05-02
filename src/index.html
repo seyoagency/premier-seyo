@@ -167,6 +167,16 @@ body > * { position: relative; z-index: 2; }
   display: block;
 }
 
+.brand-logo {
+  display: block;
+  height: 40px;
+  width: auto;
+  max-width: 200px;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -1402,16 +1412,7 @@ body.no-key .tab-content { display: none; }
   <!-- App header: brand + live API status + settings -->
   <header class="app-header">
     <div class="brand">
-      <span class="brand-mark">
-        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <rect x="1.5" y="1.5" width="25" height="25" rx="7" stroke="#d4ff3a" stroke-width="1.4" />
-          <path d="M6 14h2v3M9 11v8M12 8v12M15 11v8M18 13v3M21 14h2" stroke="#d4ff3a" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
-      </span>
-      <div>
-        <span class="brand-name">premier<span class="brand-name-accent">·</span>seyo</span>
-        <span class="brand-tag">audio · cut · caption</span>
-      </div>
+      <img class="brand-logo" src="../icons/autoCutSrt.png" alt="AutoCut SRT — auto cuts, smart subtitles" />
     </div>
     <div class="header-actions">
       <button class="conn-badge" id="conn-badge" type="button" title="Deepgram bağlantı durumu">
