@@ -9,9 +9,16 @@
     "bundle": "npx --yes esbuild src/index.js --bundle --platform=browser --format=iife --external:uxp --external:premierepro --external:fs --external:os --external:path --outfile=src/bundle.js",
     "inline": "node scripts/inline-assets.js",
     "deploy": "node scripts/deploy-plugin.js",
-    "build": "npm run bundle && npm run inline && npm run deploy",
+    "build:assets": "npm run bundle && npm run inline",
+    "build": "npm run build:assets && npm run deploy",
+    "package:win": "node scripts/package-windows.js",
+    "installer:win": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/build-installer.ps1",
+    "check:js": "node scripts/check-js.js",
     "test:timeline": "node scripts/test-timeline-mapper.js",
     "test:caption": "node scripts/test-caption-grouper.js",
-    "test": "npm run test:timeline && npm run test:caption"
+    "test:platform": "node scripts/test-platform.js",
+    "test:command": "node scripts/test-command-runner.js",
+    "test": "npm run test:timeline && npm run test:caption && npm run test:platform && npm run test:command",
+    "ci": "npm run test && npm run check:js"
   }
 }

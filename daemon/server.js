@@ -13,23 +13,20 @@
  */
 
 const http = require("http");
-const { exec, execSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 const deepgram = require("./deepgram-client");
+const platform = require("./platform");
+const { runCommand, formatCommand } = require("./command-runner");
 
 const PORT = parseInt(process.env.PREMIERSEYO_PORT || process.env.PREMIERECUT_PORT || "53117");
-const TMP_DIR = path.join(os.tmpdir(), "premier-seyo");
-const TOKEN_DIR = path.join(os.homedir(), ".config", "premier-seyo");
-const TOKEN_FILE = path.join(TOKEN_DIR, "token");
-const PATH_ENV = `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
+const TMP_DIR = platform.getTmpDir();
+const TOKEN_DIR = platform.getConfigDir();
+const TOKEN_FILE = platform.getTokenFile();
 
 // TMP dizini olustur
-if (!fs.existsSync(TMP_DIR)) {
-  fs.mkdirSync(TMP_DIR, { recursive: true });
-}
+platform.ensureDir(TMP_DIR);
 
 // ——— Auth token: ilk baslatmada uret, plugin paylasilan dosyadan okur ———
 let AUTH_TOKEN = "";
@@ -43,10 +40,9 @@ function ensureAuthToken() {
       }
     }
   } catch {}
-  fs.mkdirSync(TOKEN_DIR, { recursive: true });
+  platform.ensureDir(TOKEN_DIR, 0o700);
   AUTH_TOKEN = crypto.randomBytes(32).toString("hex");
-  fs.writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600 });
-  try { fs.chmodSync(TOKEN_FILE, 0o600); } catch {}
+  platform.writePrivateFile(TOKEN_FILE, AUTH_TOKEN);
 }
 ensureAuthToken();
 
@@ -60,36 +56,10 @@ function isAuthorized(req) {
   }
 }
 
-function isTrustedPluginClient(req) {
-  const client = String(req.headers["x-premiere-cut-client"] || "").trim();
-  if (client !== "premierseyo-uxp") return false;
-
-  // UXP panel istekleri genelde Origin=null veya bos gelir. Normal web sayfalari
-  // custom header ile gelebilmek icin preflight gecmek zorunda; CORS yalnizca
-  // Origin=null'a izin verdigi icin browser kaynakli siteler bu yolu kullanamaz.
-  const origin = String(req.headers.origin || "").trim();
-  if (origin && origin !== "null") return false;
-
-  return true;
-}
-
 // ——— Yardimci Fonksiyonlar ———
 
-function runCmd(cmd, timeoutMs = 600000) {
-  return new Promise((resolve) => {
-    exec(
-      cmd,
-      { timeout: timeoutMs, maxBuffer: 1024 * 1024 * 100, env: { ...process.env, PATH: PATH_ENV } },
-      (error, stdout, stderr) => {
-        resolve({
-          ok: !error || error.code === 0,
-          stdout: stdout || "",
-          stderr: stderr || "",
-          code: error ? (error.code || 1) : 0,
-        });
-      }
-    );
-  });
+function runCmd(command, args = [], timeoutMs = 600000) {
+  return runCommand(command, args, { timeoutMs });
 }
 
 function sendJson(res, status, payload) {
@@ -118,10 +88,6 @@ function parseBody(req) {
   });
 }
 
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, "'\\''")}'`;
-}
-
 function humanizeFFmpegError(stderr) {
   if (!stderr) return "FFmpeg ses çıkartamadı (bilinmeyen sebep).";
   const text = String(stderr);
@@ -132,7 +98,7 @@ function humanizeFFmpegError(stderr) {
     return "FFmpeg medya dosyasını okuyamadı (bozuk veya desteklenmeyen format).";
   }
   if (/permission denied/i.test(text)) {
-    return "FFmpeg dosyaya erişim izni alamadı. macOS izinlerini kontrol et.";
+    return "FFmpeg dosyaya erişim izni alamadı. İşletim sistemi izinlerini kontrol et.";
   }
   if (/no audio stream|stream specifier .* matches no streams/i.test(text)) {
     return "FFmpeg ses kanalı bulamadı. Sequence'de ses var mı kontrol et.";
@@ -149,14 +115,17 @@ function humanizeFFmpegError(stderr) {
   return tail ? `FFmpeg hatası: ${tail}` : "FFmpeg ses çıkartırken hata aldı.";
 }
 
-function safeToken(value, fallback) {
-  const token = String(value || "");
-  return /^[a-zA-Z0-9_.-]+$/.test(token) ? token : fallback;
-}
-
 function finiteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function isWithinRoot(filePath, root) {
+  const resolved = path.resolve(filePath);
+  const safeRoot = path.resolve(root);
+  const a = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  const b = process.platform === "win32" ? safeRoot.toLowerCase() : safeRoot;
+  return a === b || a.startsWith(b + path.sep);
 }
 
 // ——— Handler'lar ———
@@ -166,7 +135,7 @@ async function handlePing(req, res) {
 }
 
 async function handleCheck(req, res) {
-  const ffmpeg = await runCmd("ffmpeg -version", 5000);
+  const ffmpeg = await runCmd(platform.getFfmpegPath(), ["-version"], 5000);
   const deepgramReady = deepgram.hasApiKey();
 
   sendJson(res, 200, {
@@ -191,10 +160,17 @@ async function handleExportAudio(req, res) {
     const name = path.basename(inputPath, path.extname(inputPath));
     const outputPath = path.join(TMP_DIR, `${name}${suffix}.wav`);
     const safeSampleRate = Math.max(8000, Math.min(192000, parseInt(sampleRate) || 48000));
-    const monoFlag = mono ? "-ac 1" : "";
+    const args = [
+      "-y",
+      "-i", inputPath,
+      "-vn",
+      "-acodec", "pcm_s16le",
+      "-ar", String(safeSampleRate),
+    ];
+    if (mono) args.push("-ac", "1");
+    args.push(outputPath);
 
-    const cmd = `ffmpeg -y -i ${shellQuote(inputPath)} -vn -acodec pcm_s16le -ar ${safeSampleRate} ${monoFlag} ${shellQuote(outputPath)}`;
-    const result = await runCmd(cmd, 300000);
+    const result = await runCmd(platform.getFfmpegPath(), args, 300000);
 
     if (!result.ok) {
       return sendJson(res, 500, { ok: false, error: humanizeFFmpegError(result.stderr), stderr: result.stderr });
@@ -271,20 +247,11 @@ async function handleWriteFile(req, res) {
       return sendJson(res, 400, { ok: false, error: "filePath ve content gerekli" });
     }
 
-    // Guvenlik: sadece TMP_DIR veya kullanicinin Documents/Desktop dizinine yaz
-    const safeRoots = [
-      TMP_DIR,
-      path.join(os.homedir(), "Documents"),
-      path.join(os.homedir(), "Desktop"),
-      path.join(os.homedir(), "Downloads"),
-      path.join(os.homedir(), "Movies"),
-    ];
+    // Guvenlik: sadece TMP_DIR veya kullanicinin media/user dizinlerine yaz
+    const safeRoots = platform.getSafeWriteRoots();
 
     const resolved = path.resolve(filePath);
-    const isSafe = safeRoots.some((root) => {
-      const safeRoot = path.resolve(root);
-      return resolved === safeRoot || resolved.startsWith(safeRoot + path.sep);
-    });
+    const isSafe = safeRoots.some((root) => isWithinRoot(resolved, root));
     if (!isSafe) {
       return sendJson(res, 403, { ok: false, error: `Bu konuma yazmaya izin yok: ${resolved}` });
     }
@@ -309,7 +276,7 @@ async function handleBuildSequenceAudio(req, res) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
     const safeSampleRate = Math.max(8000, Math.min(192000, parseInt(sampleRate) || 48000));
-    const monoFlag = mono ? "-ac 1" : "-ac 2";
+    const channelArgs = mono ? ["-ac", "1"] : ["-ac", "2"];
 
     const sorted = [...clips]
       .filter((clip) => clip && clip.path && fs.existsSync(clip.path))
@@ -330,17 +297,18 @@ async function handleBuildSequenceAudio(req, res) {
       if (duration <= 0.001) continue;
 
       const clipPath = path.join(tmpSeg, `clip-${i}.wav`);
-      const clipCmd = [
-        "ffmpeg -y",
+      const clipArgs = [
+        "-y",
         "-ss", sourceIn.toFixed(3),
         "-t", duration.toFixed(3),
-        "-i", shellQuote(clip.path),
-        "-vn -acodec pcm_s16le",
-        "-ar", safeSampleRate,
-        monoFlag,
-        shellQuote(clipPath),
-      ].join(" ");
-      const c = await runCmd(clipCmd, 120000);
+        "-i", clip.path,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", String(safeSampleRate),
+        ...channelArgs,
+        clipPath,
+      ];
+      const c = await runCmd(platform.getFfmpegPath(), clipArgs, 120000);
       if (!c.ok) {
         console.error(`clip ${i} trim hatasi:`, c.stderr.slice(-500));
         continue;
@@ -355,25 +323,24 @@ async function handleBuildSequenceAudio(req, res) {
       return sendJson(res, 500, { ok: false, error: "Hicbir clip segment'i olusturulamadi" });
     }
 
-    const inputArgs = prepared.map((item) => `-i ${shellQuote(item.path)}`).join(" ");
     const filters = prepared.map((item, index) => `[${index}:a]adelay=${item.delayMs}:all=1[a${index}]`);
     const filter = prepared.length === 1
       ? `${filters[0]};[a0]anull[aout]`
       : `${filters.join(";")};${prepared.map((_, index) => `[a${index}]`).join("")}amix=inputs=${prepared.length}:duration=longest:normalize=0[aout]`;
-    const cmd = [
-      "ffmpeg -y",
-      inputArgs,
-      "-filter_complex", shellQuote(filter),
-      "-map", shellQuote("[aout]"),
-      "-acodec pcm_s16le",
-      "-ar", safeSampleRate,
-      monoFlag,
-      shellQuote(outputPath),
-    ].join(" ");
+    const args = ["-y"];
+    for (const item of prepared) args.push("-i", item.path);
+    args.push(
+      "-filter_complex", filter,
+      "-map", "[aout]",
+      "-acodec", "pcm_s16le",
+      "-ar", String(safeSampleRate),
+      ...channelArgs,
+      outputPath
+    );
 
-    console.log("BUILD-SEQ-AUDIO cmd:", cmd.substring(0, 500));
+    console.log("BUILD-SEQ-AUDIO cmd:", formatCommand(platform.getFfmpegPath(), args).substring(0, 500));
 
-    const result = await runCmd(cmd, 600000);
+    const result = await runCmd(platform.getFfmpegPath(), args, 600000);
     if (!result.ok) {
       console.error("BUILD-SEQ-AUDIO FFmpeg stderr:", result.stderr);
       return sendJson(res, 500, { ok: false, error: humanizeFFmpegError(result.stderr), stderr: result.stderr.substring(0, 3000) });
@@ -393,7 +360,8 @@ async function handleReveal(req, res) {
     if (!filePath) {
       return sendJson(res, 400, { ok: false, error: "filePath gerekli" });
     }
-    await runCmd(`open -R ${shellQuote(filePath)}`, 5000);
+    const reveal = platform.getRevealCommand(filePath);
+    await runCmd(reveal.command, reveal.args, 5000);
     sendJson(res, 200, { ok: true });
   } catch (err) {
     sendJson(res, 500, { ok: false, error: err.message });
@@ -401,7 +369,7 @@ async function handleReveal(req, res) {
 }
 
 async function handleHomeDir(req, res) {
-  sendJson(res, 200, { ok: true, homeDir: os.homedir(), documentsDir: path.join(os.homedir(), "Documents") });
+  sendJson(res, 200, { ok: true, ...platform.getHomeDirs() });
 }
 
 async function handleLog(req, res) {
@@ -426,9 +394,8 @@ async function handleSetDeepgramKey(req, res) {
     }
 
     const dir = path.dirname(deepgram.KEY_FILE);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(deepgram.KEY_FILE, trimmed, { mode: 0o600 });
-    try { fs.chmodSync(deepgram.KEY_FILE, 0o600); } catch {}
+    platform.ensureDir(dir, 0o700);
+    platform.writePrivateFile(deepgram.KEY_FILE, trimmed);
 
     deepgram.clearCache();
     console.log(`SET-DEEPGRAM-KEY → ${deepgram.KEY_FILE} (${trimmed.length} char)`);
@@ -583,15 +550,8 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 404, { ok: false, error: `Route bulunamadi: ${key}` });
   }
 
-  const tokenHeader = req.headers["x-premiere-cut-token"] || "";
-  if (key !== "GET /ping") {
-    if (tokenHeader) {
-      if (!isAuthorized(req)) {
-        return sendJson(res, 401, { ok: false, error: "Gecersiz token" });
-      }
-    } else if (!isTrustedPluginClient(req)) {
-      return sendJson(res, 401, { ok: false, error: "Yetki gerekli (trusted plugin client veya token)" });
-    }
+  if (key !== "GET /ping" && !isAuthorized(req)) {
+    return sendJson(res, 401, { ok: false, error: "Gecersiz veya eksik token" });
   }
 
   try {

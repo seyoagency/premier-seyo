@@ -2329,15 +2329,39 @@ button::before {
           const fs = __require("fs");
           const os = __require("os");
           const path = __require("path");
-          const tokenPath = path.join(os.homedir(), ".config", "premier-seyo", "token");
-          const content = fs.readFileSync(tokenPath, "utf-8").trim();
-          if (content && content.length >= 32) {
-            _cachedToken = content;
-            return content;
+          const homeDir = os.homedir();
+          const platform = typeof os.platform === "function" ? os.platform() : "";
+          const isWindows = platform === "win32" || String(homeDir).includes("\\");
+          const appData = getEnv("APPDATA") || path.join(homeDir, "AppData", "Roaming");
+          const candidates = isWindows ? [
+            path.join(appData, "PremierSEYO", "token"),
+            path.join(homeDir, "AppData", "Roaming", "PremierSEYO", "token")
+          ] : [
+            path.join(homeDir, ".config", "premier-seyo", "token"),
+            path.join(homeDir, ".config", "premiere-cut", "token")
+          ];
+          for (const tokenPath of candidates) {
+            try {
+              const content = fs.readFileSync(tokenPath, "utf-8").trim();
+              if (content && content.length >= 32) {
+                _cachedToken = content;
+                return content;
+              }
+            } catch {
+            }
           }
         } catch {
         }
         return null;
+      }
+      function getEnv(name) {
+        try {
+          if (typeof process !== "undefined" && process.env && process.env[name]) {
+            return process.env[name];
+          }
+        } catch {
+        }
+        return "";
       }
       async function call(path, body = null, timeoutMs = DEFAULT_TIMEOUT) {
         const url = DAEMON_URL + path;
@@ -2359,7 +2383,7 @@ button::before {
           if (!res.ok) {
             if (res.status === 401) {
               throw new Error(
-                "Helper daemon yetkilendirmesi basarisiz. Daemon'u yeniden baslatin.\nKomutlar: launchctl unload ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist && launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist"
+                "Helper daemon yetkilendirmesi basarisiz. Daemon'u yeniden baslatin.\nmacOS: launchctl unload/load com.seyoweb.premierseyo.daemon.plist\nWindows: Task Scheduler'da 'PremierSEYO Daemon' task'ini yeniden baslatin."
               );
             }
             throw new Error(data.error || `HTTP ${res.status}`);
@@ -2371,7 +2395,7 @@ button::before {
           }
           if (err.message && err.message.includes("fetch")) {
             throw new Error(
-              "Helper daemon'a ulasilamadi. Lutfen daemon'un calistigindan emin olun.\nBaslatma komutu: launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist"
+              "Helper daemon'a ulasilamadi. Lutfen daemon'un calistigindan emin olun.\nmacOS: launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist\nWindows: Task Scheduler > PremierSEYO Daemon"
             );
           }
           throw err;

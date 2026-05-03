@@ -15,6 +15,10 @@ tools/
 .env.local
 .env.*.local
 
+# Windows offline installer runtimes (large binaries)
+vendor/windows/node/
+vendor/windows/ffmpeg/
+
 # IDE
 .vscode/
 .idea/
