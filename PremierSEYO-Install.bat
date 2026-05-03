@@ -22,16 +22,26 @@ set "TEMP_DIR=%TEMP%\premier-seyo-install"
 set "RELEASE_URL=https://github.com/seyoagency/premier-seyo/releases/download/v%VERSION%-windows.3/PremierSEYO-Windows-Portable-%VERSION%.zip"
 
 echo [0/8] Eski PremierSEYO daemon temizleniyor (varsa)...
-REM Port 53117'yi dinleyen process'leri oldur
+REM 1) Port 53117'yi dinleyen process'leri oldur (en kesin yol)
 for /f "tokens=5" %%P in ('netstat -ano 2^>nul ^| findstr ":53117 .*LISTENING"') do (
     taskkill /F /PID %%P >nul 2>nul
 )
-REM Eski HKCU Run entry'sini sil (yeniden ekleyecegiz)
+
+REM 2) PremierSEYO commandline iceren tum node.exe'leri oldur
+REM    (port'a bind edememis ama dosya kilitleyen zombie node.exe yakalama)
+powershell -NoProfile -Command "Get-Process node -EA 0 | ForEach-Object { try { $cmd = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $_.Id) -EA 0).CommandLine; if ($cmd -and $cmd -match 'PremierSEYO') { Stop-Process -Id $_.Id -Force -EA 0 } } catch {} }" >nul 2>nul
+
+REM 3) Daemon wrapper window'larini kapat (start-daemon.cmd)
+taskkill /F /FI "WINDOWTITLE eq PremierSEYO Daemon*" >nul 2>nul
+
+REM 4) Eski HKCU Run entry'sini sil (yeniden ekleyecegiz)
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "PremierSEYODaemon" /f >nul 2>nul
-REM Eski scheduled task varsa sil
+
+REM 5) Eski scheduled task varsa sil
 schtasks /Delete /TN "PremierSEYO Daemon" /F >nul 2>nul
-REM Daemon'un dosya kilitlerini bosaltmasi icin kisa bekle
-timeout /t 1 /nobreak >nul
+
+REM 6) Dosya kilitleri tamamen bosalsin
+timeout /t 2 /nobreak >nul
 
 echo [1/8] Calisma klasoru hazirlaniyor...
 if exist "%TEMP_DIR%" rmdir /S /Q "%TEMP_DIR%" 2>nul
@@ -50,6 +60,14 @@ if not exist "%TEMP_DIR%\extracted\runtime\node\node.exe" ( echo HATA: Portable 
 
 echo [4/8] Plugin Premiere'e kopyalaniyor...
 if exist "%PLUGIN_DIR%" rmdir /S /Q "%PLUGIN_DIR%" 2>nul
+if exist "%PLUGIN_DIR%" (
+    echo.
+    echo  HATA: Plugin dizini silinemiyor. Premiere Pro acik.
+    echo  Lutfen Premiere'i tamamen kapat (File ^> Quit) ve bu .bat'i tekrar calistir.
+    echo.
+    pause
+    exit /b 1
+)
 mkdir "%PLUGIN_DIR%" 2>nul
 xcopy /E /Y /I /Q "%TEMP_DIR%\extracted\plugin-source\*" "%PLUGIN_DIR%\" >nul
 
@@ -73,11 +91,11 @@ xcopy /E /Y /I /Q "%TEMP_DIR%\extracted\runtime\*" "%RUNTIME_DIR%\" >nul
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%" 2>nul
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" 2>nul
 
-REM Wrapper .cmd: ffmpeg PATH'ini ekle, sonra node ile daemon'u baslat
+REM Wrapper .cmd: ffmpeg PATH'ini ekle, daemon'u baslat, output log'a yonlendir
 > "%INSTALL_ROOT%\start-daemon.cmd" (
     echo @echo off
     echo set "PATH=%RUNTIME_DIR%\ffmpeg\bin;%%PATH%%"
-    echo "%RUNTIME_DIR%\node\node.exe" "%DAEMON_DIR%\server.js"
+    echo "%RUNTIME_DIR%\node\node.exe" "%DAEMON_DIR%\server.js" ^> "%LOG_DIR%\daemon.log" 2^>^&1
 )
 
 echo [6/8] Daemon kullanici login'inde otomatik baslayacak (HKCU Run)...
