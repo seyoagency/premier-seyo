@@ -1,7 +1,7 @@
 # PremierSEYO
 
 > Adobe Premiere Pro 2026 için **Auto-Cut** (sessizlik kesimi) + **Auto-SRT** (altyazı üretimi) eklentisi.
-> Deepgram Nova-3 ile Türkçe ve çoklu dil desteği. macOS-only.
+> Deepgram Nova-3 ile Türkçe ve çoklu dil desteği. macOS + Windows 10/11 x64.
 
 [![Premiere Pro](https://img.shields.io/badge/Premiere%20Pro-25.6%2B-9999FF?logo=adobepremierepro&logoColor=white)](https://www.adobe.com/products/premiere.html)
 [![Deepgram Nova-3](https://img.shields.io/badge/Deepgram-Nova--3-13EF93?logo=deepgram&logoColor=black)](https://deepgram.com)
@@ -12,7 +12,7 @@
 - **Auto-Cut** — Konuşma dışı sessizlikleri ve nefes seslerini timeline üzerinde otomatik tespit eder, tek tuşla keser.
 - **Auto-SRT** — Word-level timestamp ile yüksek kaliteli altyazı (SRT/VTT). Otomatik dil tespiti veya manuel seçim (TR, EN, DE, FR, ES + diğerleri).
 - **Tek istek, çift sonuç** — Auto-Cut sonrası Auto-SRT yapılırsa daemon aynı Deepgram cevabını cache'ten kullanır. Maliyet ve gecikme yarılır.
-- **Sıfır data dışarı çıkışı** — API key sadece kendi makinende dosyada saklanır (`~/.config/premier-seyo/`, chmod 600).
+- **Sıfır data dışarı çıkışı** — API key sadece kendi makinende dosyada saklanır (macOS: `~/.config/premier-seyo/`, Windows: `%APPDATA%\PremierSEYO\`).
 
 ---
 
@@ -62,6 +62,38 @@ git clone https://github.com/seyoagency/premier-seyo.git ~/premier-seyo
 cd ~/premier-seyo
 ./daemon/install-daemon.sh
 ```
+
+Script şunları yapar:
+- Bağımlılık kontrolü (Node.js, FFmpeg)
+- Eski kurulum varsa otomatik migrate (`~/.config/premiere-cut/` → `~/.config/premier-seyo/`)
+- Deepgram API key prompt (girmek zorunda değilsin, eklentide ayarlardan da girebilirsin)
+- macOS LaunchAgent kurulumu (Mac her açılınca daemon otomatik başlar)
+- Plugin'i Premiere UXP install dizinine kopyalar (`npm run build`)
+
+## Windows Kurulum
+
+Windows dağıtımı tek tık installer olarak hazırlanır:
+
+```text
+PremierSEYO-Setup-x64-<version>.exe
+```
+
+Installer şunları yapar:
+- PremierSEYO daemon dosyalarını `%LOCALAPPDATA%\Programs\PremierSEYO` altına kurar.
+- Deepgram key ve token dosyaları için `%APPDATA%\PremierSEYO` kullanır.
+- Logları `%LOCALAPPDATA%\PremierSEYO\logs` altına yazar.
+- Daemon'u kullanıcı oturumunda otomatik başlatmak için `PremierSEYO Daemon` HKCU Run kaydını oluşturur.
+- Bundled `PremierSEYO.ccx` dosyasını Adobe UPIA ile kurar.
+
+Gereksinimler:
+- Windows 10/11 x64
+- Premiere Pro 25.6+
+- Creative Cloud Desktop / UPIA kurulu ve çalışabilir durumda
+
+### 3. Premiere Pro
+
+- Premiere Pro çalışıyorsa **Cmd+Q** ile tam kapat → tekrar aç (UXP plugin cache).
+- **Window > UXP Plugins > PremierSEYO > PremierSEYO** ile paneli aç.
 
 ---
 
@@ -157,6 +189,9 @@ cd premier-seyo
 # Sadece esbuild npx ile çalışır (npm install gerekmez).
 
 npm run build        # bundle + inline + UXP install dizinine deploy
+npm run build:assets # sadece bundle + inline
+npm run package:win  # Windows staging klasörünü hazırla
+npm run installer:win # Windows NSIS installer üret
 npm run bundle       # esbuild src/index.js → src/bundle.js
 npm run inline       # bundle.js + styles.css → src/index.html'e göm
 npm run deploy       # rsync → ~/Library/Application Support/Adobe/UXP/Plugins/External/...
@@ -175,7 +210,7 @@ npm run deploy       # rsync → ~/Library/Application Support/Adobe/UXP/Plugins
 ┌──────────────────────────────────────────────────────────────┐
 │  Helper Daemon (Node.js, port 53117)                         │
 │  daemon/server.js + deepgram-client.js                       │
-│  macOS LaunchAgent — RunAtLoad + KeepAlive                   │
+│  macOS LaunchAgent / Windows HKCU Run                        │
 └──────────────────────┬─────────────────┬─────────────────────┘
                        │                 │
                        ▼                 ▼
@@ -197,9 +232,12 @@ premier-seyo/
 ├── daemon/
 │   ├── server.js              HTTP endpoints (53117)
 │   ├── deepgram-client.js     Deepgram REST + cache
+│   ├── platform.js            macOS/Windows path + runtime helpers
+│   ├── command-runner.js      shell'siz process runner
 │   ├── install-daemon.sh      Migration aware setup
 │   ├── uninstall-daemon.sh    --purge mode
 │   └── com.seyoweb.premierseyo.daemon.plist
+├── installer/windows/         NSIS + PowerShell Windows installer
 ├── src/
 │   ├── index.html             Panel UI (build çıktısında inline)
 │   ├── index.js               Entry point
@@ -234,7 +272,8 @@ cd ~/premier-seyo
 
 ## Bilinen Sınırlamalar
 
-- **macOS-only** — LaunchAgent, brew, Homebrew Node/FFmpeg kullanılıyor. Windows desteği yok.
+- **Windows x64-only** — İlk Windows installer ARM64 hedeflemez.
+- **Windows installer unsigned** — Code signing sertifikası eklenene kadar SmartScreen uyarısı görülebilir.
 - **Tek konuşmacı** için optimize. Multi-speaker diarization (Deepgram `diarize=true`) henüz açık değil.
 - **Auto-Cut yerinde keser** — UXP API'si programatik sequence duplicate desteklemediği için kesim aktif sequence üzerinde yapılır. Cmd+Z birden fazla undo gerektirir; bu yüzden modal uyarı her seferinde gösterilir. **Önce mutlaka sequence kopyası al.**
 - **Premiere 2026 (25.6+)** — Daha eski sürümlerde UXP API'leri eksik olabilir.

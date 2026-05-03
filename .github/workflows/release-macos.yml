@@ -1,0 +1,158 @@
+name: Build macOS Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Eger bos degilse build sonunda bu tag adiyla GitHub Release olusturur (orn. v1.2.2)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+      - "!v*-windows*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build PremierSEYO-universal.pkg
+    runs-on: macos-14   # Apple Silicon ARM64 — universal binary uretmek icin lipo arm64+x86_64'u birlestirir
+
+    env:
+      NODE_PORTABLE_VERSION: "20.18.1"
+      FFMPEG_ARM64_URL: "https://www.osxexperts.net/ffmpeg7arm.zip"
+      FFMPEG_X86_64_URL: "https://www.osxexperts.net/ffmpeg71intel.zip"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (host - build icin)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache vendor runtimes
+        id: cache-vendor
+        uses: actions/cache@v4
+        with:
+          path: vendor/macos
+          key: vendor-macos-node-${{ env.NODE_PORTABLE_VERSION }}-ffmpeg-osxexperts-v3
+
+      - name: Download Node.js portable (arm64 + x86_64)
+        if: steps.cache-vendor.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          mkdir -p vendor/macos/arm64 vendor/macos/x86_64
+          version="${NODE_PORTABLE_VERSION}"
+          for ARCH in arm64 x64; do
+            curl -fsSL "https://nodejs.org/dist/v${version}/node-v${version}-darwin-${ARCH}.tar.gz" -o "node-${ARCH}.tar.gz"
+            tar xzf "node-${ARCH}.tar.gz"
+            DEST="vendor/macos/${ARCH/x64/x86_64}"
+            cp "node-v${version}-darwin-${ARCH}/bin/node" "$DEST/node"
+            chmod +x "$DEST/node"
+            rm -rf "node-v${version}-darwin-${ARCH}" "node-${ARCH}.tar.gz"
+          done
+
+      - name: Download FFmpeg static (arm64 + x86_64)
+        if: steps.cache-vendor.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          mkdir -p vendor/macos/arm64 vendor/macos/x86_64
+          curl -fsSL "${FFMPEG_ARM64_URL}" -o ffmpeg-arm64.zip
+          unzip -o ffmpeg-arm64.zip -d ffmpeg-arm64-tmp
+          find ffmpeg-arm64-tmp -name ffmpeg -type f -perm -u+x | head -1 | xargs -I{} cp {} vendor/macos/arm64/ffmpeg
+          chmod +x vendor/macos/arm64/ffmpeg
+          rm -rf ffmpeg-arm64-tmp ffmpeg-arm64.zip
+          curl -fsSL "${FFMPEG_X86_64_URL}" -o ffmpeg-x86_64.zip
+          unzip -o ffmpeg-x86_64.zip -d ffmpeg-x86_64-tmp
+          find ffmpeg-x86_64-tmp -name ffmpeg -type f -perm -u+x | head -1 | xargs -I{} cp {} vendor/macos/x86_64/ffmpeg
+          chmod +x vendor/macos/x86_64/ffmpeg
+          rm -rf ffmpeg-x86_64-tmp ffmpeg-x86_64.zip
+
+      - name: Verify vendor runtimes
+        run: |
+          file vendor/macos/arm64/node
+          file vendor/macos/x86_64/node
+          file vendor/macos/arm64/ffmpeg
+          file vendor/macos/x86_64/ffmpeg
+          vendor/macos/arm64/node --version
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build assets (bundle + inline)
+        run: npm run build:assets
+
+      - name: Import code signing certificates
+        env:
+          APP_P12_BASE64: ${{ secrets.APPLE_DEV_ID_APP_P12_BASE64 }}
+          INSTALLER_P12_BASE64: ${{ secrets.APPLE_DEV_ID_INSTALLER_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}
+        run: |
+          set -e
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASS="ci-temp-$RANDOM"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+
+          echo "$APP_P12_BASE64" | base64 -d > "$RUNNER_TEMP/app.p12"
+          echo "$INSTALLER_P12_BASE64" | base64 -d > "$RUNNER_TEMP/installer.p12"
+          security import "$RUNNER_TEMP/app.p12" -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/productsign
+          security import "$RUNNER_TEMP/installer.p12" -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/productsign
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild:,productsign: \
+            -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+          security find-identity -p codesigning -v "$KEYCHAIN_PATH"
+          security find-identity -p basic -v "$KEYCHAIN_PATH" | grep -i "Developer ID"
+
+          rm -f "$RUNNER_TEMP/app.p12" "$RUNNER_TEMP/installer.p12"
+
+      - name: Build .pkg (sign + notarize + staple)
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_DEV_ID_APPLICATION_NAME: ${{ secrets.APPLE_DEV_ID_APPLICATION_NAME }}
+          APPLE_DEV_ID_INSTALLER_NAME: ${{ secrets.APPLE_DEV_ID_INSTALLER_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+        run: |
+          chmod +x installer/macos/build-pkg.sh
+          installer/macos/build-pkg.sh
+
+      - name: Locate output .pkg
+        id: locate
+        run: |
+          PKG=$(find dist -maxdepth 2 -name "PremierSEYO-*-universal.pkg" | head -1)
+          [ -n "$PKG" ] || { echo "::error::PKG uretilemedi"; exit 1; }
+          echo "pkg_path=$PKG" >> "$GITHUB_OUTPUT"
+          echo "pkg_name=$(basename "$PKG")" >> "$GITHUB_OUTPUT"
+          ls -la "$PKG"
+          shasum -a 256 "$PKG"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PremierSEYO-macOS-Installer
+          path: ${{ steps.locate.outputs.pkg_path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create / update GitHub Release (tag push veya release_tag input)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: PremierSEYO ${{ inputs.release_tag || github.ref_name }}
+          generate_release_notes: true
+          files: ${{ steps.locate.outputs.pkg_path }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

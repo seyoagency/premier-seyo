@@ -24,7 +24,19 @@ const PORT = parseInt(process.env.PREMIERSEYO_PORT || process.env.PREMIERECUT_PO
 const TMP_DIR = path.join(os.tmpdir(), "premier-seyo");
 const TOKEN_DIR = path.join(os.homedir(), ".config", "premier-seyo");
 const TOKEN_FILE = path.join(TOKEN_DIR, "token");
-const PATH_ENV = `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
+function buildPathEnv() {
+  const entries = [];
+  if (process.platform === "win32") {
+    const installDir = process.env.PREMIERSEYO_INSTALL_DIR || path.resolve(__dirname, "..");
+    entries.push(path.join(installDir, "runtime", "ffmpeg", "bin"));
+    entries.push(path.join(installDir, "runtime", "node"));
+  }
+  entries.push("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin");
+  entries.push(...String(process.env.PATH || "").split(path.delimiter));
+  return entries.filter(Boolean).join(path.delimiter);
+}
+
+const PATH_ENV = buildPathEnv();
 
 // TMP dizini olustur
 if (!fs.existsSync(TMP_DIR)) {

@@ -1,0 +1,141 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Eger bos degilse build sonunda bu tag adiyla GitHub Release olusturur (orn. v1.2.2)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*-windows*"
+
+# softprops/action-gh-release release olusturmak icin contents: write ister.
+# Default GITHUB_TOKEN sadece read olabiliyor; explicit permissions blogu garantiler.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build PremierSEYO-Setup-x64.exe
+    runs-on: windows-latest
+
+    env:
+      NODE_PORTABLE_VERSION: "20.18.1"
+      FFMPEG_RELEASE_URL: "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (host - build icin)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache vendor runtimes
+        id: cache-vendor
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor/windows/node
+            vendor/windows/ffmpeg
+          key: vendor-windows-${{ env.NODE_PORTABLE_VERSION }}-ffmpeg-essentials-v1
+
+      - name: Download Node.js portable (vendor)
+        if: steps.cache-vendor.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $version = "${env:NODE_PORTABLE_VERSION}"
+          $zipUrl = "https://nodejs.org/dist/v${version}/node-v${version}-win-x64.zip"
+          New-Item -ItemType Directory -Force vendor/windows | Out-Null
+          Invoke-WebRequest -Uri $zipUrl -OutFile node.zip
+          Expand-Archive -Path node.zip -DestinationPath vendor/windows -Force
+          $extracted = "vendor/windows/node-v${version}-win-x64"
+          if (Test-Path "vendor/windows/node") { Remove-Item -Recurse -Force "vendor/windows/node" }
+          Move-Item -Path $extracted -Destination "vendor/windows/node"
+          # Portable Node klasor yapisinda node.exe root'ta olmali
+          if (-not (Test-Path "vendor/windows/node/node.exe")) {
+            Get-ChildItem -Recurse "vendor/windows/node" -Filter "node.exe" | ForEach-Object {
+              Copy-Item $_.FullName "vendor/windows/node/node.exe" -Force
+            }
+          }
+          Remove-Item node.zip
+
+      - name: Download FFmpeg (vendor)
+        if: steps.cache-vendor.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vendor/windows | Out-Null
+          Invoke-WebRequest -Uri "${env:FFMPEG_RELEASE_URL}" -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath vendor/windows/_ffmpeg-tmp -Force
+          $extracted = Get-ChildItem "vendor/windows/_ffmpeg-tmp" -Directory | Select-Object -First 1
+          if (Test-Path "vendor/windows/ffmpeg") { Remove-Item -Recurse -Force "vendor/windows/ffmpeg" }
+          Move-Item -Path $extracted.FullName -Destination "vendor/windows/ffmpeg"
+          Remove-Item -Recurse -Force "vendor/windows/_ffmpeg-tmp"
+          Remove-Item ffmpeg.zip
+          if (-not (Test-Path "vendor/windows/ffmpeg/bin/ffmpeg.exe")) {
+            throw "ffmpeg.exe bulunamadi: vendor/windows/ffmpeg/bin/ffmpeg.exe"
+          }
+
+      - name: Verify vendor runtimes
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "vendor/windows/node/node.exe")) { throw "node.exe yok" }
+          if (-not (Test-Path "vendor/windows/ffmpeg/bin/ffmpeg.exe")) { throw "ffmpeg.exe yok" }
+          & "vendor/windows/node/node.exe" --version
+          & "vendor/windows/ffmpeg/bin/ffmpeg.exe" -version | Select-Object -First 1
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          # NSIS PATH'ine "C:\Program Files (x86)\NSIS" ekleniyor; sonraki step'lerde "makensis" ile cagrilir
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Run tests
+        shell: pwsh
+        run: npm test
+
+      - name: Build assets (bundle + inline)
+        shell: pwsh
+        run: npm run build:assets
+
+      - name: Stage Windows package
+        shell: pwsh
+        run: npm run package:win
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: npm run installer:win
+
+      - name: Locate output .exe
+        id: locate
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path dist -Filter "PremierSEYO-Setup-x64-*.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "Setup .exe uretilemedi (dist/ altinda yok)" }
+          "exe_path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "exe_name=$($exe.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Built: $($exe.FullName) ($([Math]::Round($exe.Length / 1MB, 2)) MB)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PremierSEYO-Windows-Installer
+          path: ${{ steps.locate.outputs.exe_path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create GitHub Release (sadece tag push'ta veya manual release_tag verildiyse)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: PremierSEYO ${{ inputs.release_tag || github.ref_name }}
+          generate_release_notes: true
+          files: ${{ steps.locate.outputs.exe_path }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
