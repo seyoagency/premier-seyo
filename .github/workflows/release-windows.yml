@@ -110,6 +110,19 @@ jobs:
         shell: pwsh
         run: npm run installer:win
 
+      - name: Build portable zip
+        id: portable
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $zip = "dist\PremierSEYO-Windows-Portable-$version.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "dist\windows\staging\app\*" -DestinationPath $zip -Force
+          $zipFull = (Resolve-Path $zip).Path
+          "zip_path=$zipFull" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "zip_name=$(Split-Path $zipFull -Leaf)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Built: $zipFull"
+
       - name: Locate output .exe
         id: locate
         shell: pwsh
@@ -124,7 +137,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PremierSEYO-Windows-Installer
-          path: ${{ steps.locate.outputs.exe_path }}
+          path: |
+            ${{ steps.locate.outputs.exe_path }}
+            ${{ steps.portable.outputs.zip_path }}
           if-no-files-found: error
           retention-days: 90
 
@@ -135,7 +150,9 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: PremierSEYO ${{ inputs.release_tag || github.ref_name }}
           generate_release_notes: true
-          files: ${{ steps.locate.outputs.exe_path }}
+          files: |
+            ${{ steps.locate.outputs.exe_path }}
+            ${{ steps.portable.outputs.zip_path }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

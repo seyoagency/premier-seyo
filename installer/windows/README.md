@@ -80,6 +80,18 @@ Cikti:
 dist\PremierSEYO-Setup-x64-<version>.exe
 ```
 
+Smart App Control unsigned `.exe` dosyasini engellerse release asset'lerinden
+`PremierSEYO-Windows-Portable-<version>.zip` indirilebilir. Zip'i klasore acip
+su komut calistirilir:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\install-portable.ps1
+```
+
+Bu yol NSIS `.exe` installer'i calistirmaz; payload'u
+`%LOCALAPPDATA%\Programs\PremierSEYO` altina kopyalar, UXP plugin'i kurar ve
+daemon icin HKCU Run kaydini yazar.
+
 `MAKENSIS_EXE` env var ile makensis yolu ozelletirilebilir; varsayilan
 `C:\Program Files (x86)\NSIS\makensis.exe` veya PATH'teki `makensis`.
 
