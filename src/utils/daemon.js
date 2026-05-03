@@ -3,9 +3,9 @@
  *
  * UXP'de child_process olmadigi icin FFmpeg/whisper gibi islemler
  * daemon uzerinden HTTP ile yapilir. Auth: daemon ilk baslatmada
- * macOS'ta ~/.config/premier-seyo/token, Windows'ta
- * %APPDATA%/PremierSEYO/token uretir; plugin ayni dosyadan okur ve
- * X-Premiere-Cut-Token header'inda gonderir.
+ * ~/.config/premier-seyo/token (chmod 600) uretir; plugin ayni dosyadan
+ * okur ve X-Premiere-Cut-Token header'inda gonderir. Boylece tarayicidaki
+ * bir site de localhost'a istek atsa bile token dosyasini okuyamaz.
  */
 
 const DAEMON_URL = "http://127.0.0.1:53117";
@@ -15,48 +15,22 @@ let _cachedToken = null;
 let _cachedHome = null;
 
 function readTokenSafe() {
-  // UXP'de fs.readFileSync kısıtlı olabilir; başarısızsa null döner.
+  // UXP'de fs.readFileSync kısıtlı olabilir; opsiyonel — başarısızsa null döner.
   if (_cachedToken) return _cachedToken;
   try {
     const fs = require("fs");
     const os = require("os");
     const path = require("path");
-    const homeDir = os.homedir();
-    const platform = typeof os.platform === "function" ? os.platform() : "";
-    const isWindows = platform === "win32" || String(homeDir).includes("\\");
-    const appData = getEnv("APPDATA") || path.join(homeDir, "AppData", "Roaming");
-    const candidates = isWindows
-      ? [
-          path.join(appData, "PremierSEYO", "token"),
-          path.join(homeDir, "AppData", "Roaming", "PremierSEYO", "token"),
-        ]
-      : [
-          path.join(homeDir, ".config", "premier-seyo", "token"),
-          path.join(homeDir, ".config", "premiere-cut", "token"),
-        ];
-
-    for (const tokenPath of candidates) {
-      try {
-        const content = fs.readFileSync(tokenPath, "utf-8").trim();
-        if (content && content.length >= 32) {
-          _cachedToken = content;
-          return content;
-        }
-      } catch {}
+    const tokenPath = path.join(os.homedir(), ".config", "premier-seyo", "token");
+    const content = fs.readFileSync(tokenPath, "utf-8").trim();
+    if (content && content.length >= 32) {
+      _cachedToken = content;
+      return content;
     }
   } catch {
-    // UXP fs sandbox kısıtlaması
+    // UXP fs sandbox kısıtlaması — token opsiyonel kalır, daemon da o modda çalışır
   }
   return null;
-}
-
-function getEnv(name) {
-  try {
-    if (typeof process !== "undefined" && process.env && process.env[name]) {
-      return process.env[name];
-    }
-  } catch {}
-  return "";
 }
 
 async function call(path, body = null, timeoutMs = DEFAULT_TIMEOUT) {
@@ -83,8 +57,8 @@ async function call(path, body = null, timeoutMs = DEFAULT_TIMEOUT) {
       if (res.status === 401) {
         throw new Error(
           "Helper daemon yetkilendirmesi basarisiz. Daemon'u yeniden baslatin.\n" +
-          "macOS: launchctl unload/load com.seyoweb.premierseyo.daemon.plist\n" +
-          "Windows: Task Scheduler'da 'PremierSEYO Daemon' task'ini yeniden baslatin."
+          "Komutlar: launchctl unload ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist && " +
+          "launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist"
         );
       }
       throw new Error(data.error || `HTTP ${res.status}`);
@@ -97,8 +71,7 @@ async function call(path, body = null, timeoutMs = DEFAULT_TIMEOUT) {
     if (err.message && err.message.includes("fetch")) {
       throw new Error(
         "Helper daemon'a ulasilamadi. Lutfen daemon'un calistigindan emin olun.\n" +
-        "macOS: launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist\n" +
-        "Windows: Task Scheduler > PremierSEYO Daemon"
+        "Baslatma komutu: launchctl load ~/Library/LaunchAgents/com.seyoweb.premierseyo.daemon.plist"
       );
     }
     throw err;

@@ -9,16 +9,15 @@
  *
  * API key kaynak sırası:
  *   1. process.env.DEEPGRAM_API_KEY
- *   2. platform config key file
- *      macOS: ~/.config/premier-seyo/deepgram.key
- *      Windows: %APPDATA%/PremierSEYO/deepgram.key
+ *   2. ~/.config/premier-seyo/deepgram.key (chmod 600)
  */
 
 const fs = require("fs");
 const https = require("https");
-const platform = require("./platform");
+const os = require("os");
+const path = require("path");
 
-const KEY_FILE = platform.getDeepgramKeyFile();
+const KEY_FILE = path.join(os.homedir(), ".config", "premier-seyo", "deepgram.key");
 const CACHE = new Map(); // cacheKey -> { response, expires }
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 saat
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 dk
@@ -38,24 +37,9 @@ function hasApiKey() {
   return Boolean(getApiKey());
 }
 
-function normalizeKeyterms(keyterm) {
-  if (!Array.isArray(keyterm)) return [];
-  return keyterm
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-}
-
-function buildCacheKey(audioPath, options) {
+function buildCacheKey(audioPath, language, uttSplit) {
   const stat = fs.statSync(audioPath);
-  return JSON.stringify({
-    audioPath,
-    size: stat.size,
-    mtimeMs: stat.mtimeMs,
-    language: options.language,
-    uttSplit: options.uttSplit,
-    model: options.model,
-    keyterm: normalizeKeyterms(options.keyterm),
-  });
+  return `${audioPath}::${stat.size}::${stat.mtimeMs}::${language}::${uttSplit}`;
 }
 
 function getCached(cacheKey) {
@@ -99,13 +83,7 @@ async function transcribeFile(audioPath, options = {}) {
   const uttSplit = Number.isFinite(options.uttSplit) ? options.uttSplit : 0.8;
   const model = options.model || "nova-3";
 
-  const keyterm = normalizeKeyterms(options.keyterm);
-  const cacheKey = buildCacheKey(audioPath, {
-    language: isAuto ? "auto" : language,
-    uttSplit,
-    model,
-    keyterm,
-  });
+  const cacheKey = buildCacheKey(audioPath, isAuto ? "auto" : language, uttSplit);
   const cached = getCached(cacheKey);
   if (cached) {
     return cached;
@@ -115,8 +93,8 @@ async function transcribeFile(audioPath, options = {}) {
   if (!apiKey) {
     throw new Error(
       "DEEPGRAM_API_KEY ayarlanmamış. Şu yollardan biri:\n" +
-      `  1. Key'i eklenti ayarlarından kaydet (${KEY_FILE})\n` +
-      "  2. DEEPGRAM_API_KEY environment variable olarak ver"
+      "  1. echo 'KEY' > ~/.config/premier-seyo/deepgram.key && chmod 600 ~/.config/premier-seyo/deepgram.key\n" +
+      "  2. plist'e EnvironmentVariables/DEEPGRAM_API_KEY ekle"
     );
   }
 
@@ -136,8 +114,10 @@ async function transcribeFile(audioPath, options = {}) {
   } else {
     params.append("language", language);
   }
-  if (keyterm.length > 0) {
-    for (const kt of keyterm) params.append("keyterm", kt);
+  if (Array.isArray(options.keyterm) && options.keyterm.length > 0) {
+    for (const kt of options.keyterm) {
+      if (kt && typeof kt === "string") params.append("keyterm", kt);
+    }
   }
 
   const buffer = fs.readFileSync(audioPath);
