@@ -33,17 +33,31 @@ Claude Code aşağıdaki adımları otomatik yapar:
 
 ---
 
-## Manuel Kurulum (macOS, 3 Adım)
+## macOS Kurulum (Önerilen — tek komut)
 
-### 1. Bağımlılıklar
+Terminal'i aç (Cmd+Space → "Terminal" yaz → Enter), şu komutu yapıştır + Enter:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seyoagency/premier-seyo/master/install-mac.sh | bash
+```
+
+Script şunları otomatik yapar (3-5 dakika):
+- Xcode Command Line Tools (yoksa kurar — bir GUI dialog çıkar)
+- Homebrew (yoksa kurar — Mac'in standart paket yöneticisi)
+- FFmpeg + Node.js (brew ile kurar)
+- PremierSEYO repo'yu indirip helper daemon'u **LaunchAgent** olarak başlatır
+- Premiere UXP plugin dizinine eklentiyi kopyalar
+
+Bittiğinde **Premiere Pro'yu Cmd+Q ile tam kapat → tekrar aç** → **Window > UXP Plugins > PremierSEYO > PremierSEYO** → sağ üst ⚙ → Deepgram API key gir → "Kaydet ve Bağlan".
+
+> **Not (Apple Silicon vs Intel)**: Script otomatik mimarini tespit eder, doğru ffmpeg/node sürümünü kurar. Ayar yapmana gerek yok.
+
+### Manuel Kurulum (geliştiriciler için)
+
+Tek komutu kullanmak istemezsen veya kaynak koddan derlemek için:
 
 ```bash
 brew install ffmpeg node
-```
-
-### 2. Repo + Setup
-
-```bash
 git clone https://github.com/seyoagency/premier-seyo.git ~/premier-seyo
 cd ~/premier-seyo
 ./daemon/install-daemon.sh

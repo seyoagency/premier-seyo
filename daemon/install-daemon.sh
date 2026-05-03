@@ -115,7 +115,19 @@ if [ ! -f "$KEY_FILE" ] || [ ! -s "$KEY_FILE" ]; then
   echo "  3. Sol menüden 'API Keys' > 'Create a New API Key'"
   echo "  4. Permission: 'Member' seç, key'i kopyala"
   echo
-  read -r -p "Key'i şimdi yapıştır (boş bırakırsan eklentide ayarlardan girebilirsin): " DG_KEY
+  # Stdin pipe ortaminda (curl | bash) prompt EOF aliyor; set -e ile crash etmesin diye `|| true`
+  DG_KEY=""
+  if [ -t 0 ]; then
+    read -r -p "Key'i şimdi yapıştır (boş bırakırsan eklentide ayarlardan girebilirsin): " DG_KEY || DG_KEY=""
+  else
+    # Non-interactive (curl | bash veya stdin'den okuma): stdin'in ilk satirini key olarak dene; yoksa bos
+    read -r DG_KEY || DG_KEY=""
+    if [ -n "$DG_KEY" ]; then
+      c_blue "==> Deepgram key stdin'den alindi (${#DG_KEY} karakter)"
+    else
+      c_yellow "==> Stdin bos, Deepgram key atlandi (eklenti drawer'indan girebilirsin)"
+    fi
+  fi
   echo
 
   if [ -n "$DG_KEY" ]; then
