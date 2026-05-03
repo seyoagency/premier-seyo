@@ -201,48 +201,75 @@ function Stop-ExistingDaemonProcesses {
   }
 }
 
+function Get-PowerShellExe {
+  $PowerShellExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+  if (Test-Path $PowerShellExe) { return $PowerShellExe }
+  return "powershell.exe"
+}
+
+function Install-DaemonRunKeyFallback([string]$Runner) {
+  $PowerShellExe = Get-PowerShellExe
+  $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+  $RunName = "PremierSEYO Daemon"
+  $RunValue = "`"$PowerShellExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Runner`""
+
+  New-Item -Path $RunKey -Force | Out-Null
+  Set-ItemProperty -Path $RunKey -Name $RunName -Value $RunValue
+  Log "Scheduled Task unavailable. Installed HKCU Run fallback: $RunName"
+
+  Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", $Runner) -WindowStyle Hidden
+  if (!(Test-DaemonPing)) {
+    throw "Daemon did not answer after HKCU Run fallback. See $DaemonErrLog"
+  }
+  Log "PremierSEYO daemon started through HKCU Run fallback"
+}
+
 function Register-DaemonTask {
   Log "Registering Scheduled Task"
 
-  if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-  }
+  $Runner = Write-DaemonRunner
+  $PowerShellExe = Get-PowerShellExe
   Stop-ExistingDaemonProcesses
 
-  $Runner = Write-DaemonRunner
-  $PowerShellExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-  if (!(Test-Path $PowerShellExe)) { $PowerShellExe = "powershell.exe" }
-
-  $Action = New-ScheduledTaskAction `
-    -Execute $PowerShellExe `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Runner`"" `
-    -WorkingDirectory (Join-Path $InstallDir "daemon")
-  $Trigger = New-ScheduledTaskTrigger -AtLogOn
-  $Settings = New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable `
-    -MultipleInstances IgnoreNew
-
-  Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $Action `
-    -Trigger $Trigger `
-    -Settings $Settings `
-    -Description "PremierSEYO local helper daemon" `
-    -Force | Out-Null
-
-  Start-ScheduledTask -TaskName $TaskName
-  if (!(Test-DaemonPing)) {
-    Log "Scheduled Task did not answer ping yet. Starting daemon directly once."
-    Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Runner) -WindowStyle Hidden
-    if (!(Test-DaemonPing)) {
-      throw "Daemon did not answer http://127.0.0.1:53117/ping. See $DaemonErrLog"
+  try {
+    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+      Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+      Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
     }
-  }
 
-  Log "PremierSEYO daemon task started"
+    $Action = New-ScheduledTaskAction `
+      -Execute $PowerShellExe `
+      -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Runner`"" `
+      -WorkingDirectory (Join-Path $InstallDir "daemon")
+    $Trigger = New-ScheduledTaskTrigger -AtLogOn
+    $Settings = New-ScheduledTaskSettingsSet `
+      -AllowStartIfOnBatteries `
+      -DontStopIfGoingOnBatteries `
+      -StartWhenAvailable `
+      -MultipleInstances IgnoreNew
+
+    Register-ScheduledTask `
+      -TaskName $TaskName `
+      -Action $Action `
+      -Trigger $Trigger `
+      -Settings $Settings `
+      -Description "PremierSEYO local helper daemon" `
+      -Force | Out-Null
+
+    Start-ScheduledTask -TaskName $TaskName
+    if (!(Test-DaemonPing)) {
+      Log "Scheduled Task did not answer ping yet. Starting daemon directly once."
+      Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Runner) -WindowStyle Hidden
+      if (!(Test-DaemonPing)) {
+        throw "Daemon did not answer http://127.0.0.1:53117/ping. See $DaemonErrLog"
+      }
+    }
+
+    Log "PremierSEYO daemon task started"
+  } catch {
+    Log "Scheduled Task failed: $($_.Exception.Message)"
+    Install-DaemonRunKeyFallback $Runner
+  }
 }
 
 try {
