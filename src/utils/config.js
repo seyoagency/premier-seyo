@@ -7,7 +7,9 @@
 // kullanıcı maxWordsPerCaption seçtiği zaman tam o kadar kelime gelmesini
 // bekliyor; cümle sonu/pause ile early flush deterministik değildi.
 // v3 key'e geçince eski v2 ayarlar yok sayılır, yeni default'lar yüklenir.
-const STORAGE_KEY = "premierseyo-settings-v3";
+// v4: HTML default'lari config ile uyumsuzdu (stepper=6, splitOn*=true) — eski v3
+// kayitlari yeni default'lari (3, false, false) override etmesin diye key bumped.
+const STORAGE_KEY = "premierseyo-settings-v4";
 
 const DEFAULTS = {
   silenceThreshold: -40,
