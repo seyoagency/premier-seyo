@@ -68,7 +68,7 @@ Installer şunları yapar:
 - PremierSEYO daemon dosyalarını `%LOCALAPPDATA%\Programs\PremierSEYO` altına kurar.
 - Deepgram key ve token dosyaları için `%APPDATA%\PremierSEYO` kullanır.
 - Logları `%LOCALAPPDATA%\PremierSEYO\logs` altına yazar.
-- Daemon'u kullanıcı oturumunda otomatik başlatmak için `PremierSEYO Daemon` Scheduled Task'ını oluşturur.
+- Daemon'u kullanıcı oturumunda otomatik başlatmak için `PremierSEYO Daemon` HKCU Run kaydını oluşturur.
 - Bundled `PremierSEYO.ccx` dosyasını Adobe UPIA ile kurar.
 
 Gereksinimler:
@@ -196,7 +196,7 @@ npm run deploy       # rsync → ~/Library/Application Support/Adobe/UXP/Plugins
 ┌──────────────────────────────────────────────────────────────┐
 │  Helper Daemon (Node.js, port 53117)                         │
 │  daemon/server.js + deepgram-client.js                       │
-│  macOS LaunchAgent / Windows Scheduled Task                  │
+│  macOS LaunchAgent / Windows HKCU Run                        │
 └──────────────────────┬─────────────────┬─────────────────────┘
                        │                 │
                        ▼                 ▼

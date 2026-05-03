@@ -5,7 +5,7 @@ uretir. Tek bir `.exe` icine sunlar gomulur:
 
 - UXP plugin (`PremierSEYO.ccx`) — UPIA ile Premiere Pro'ya kurulur
 - Helper daemon (Node.js + FFmpeg portable runtime'lari)
-- Scheduled Task setup script'leri
+- HKCU Run daemon autostart script'leri
 
 ## Onerilen yontem: GitHub Actions ile otomatik build
 
@@ -94,7 +94,7 @@ Kullanici `.exe`'ye cift tikladiginda:
    - `%APPDATA%\PremierSEYO\` — API key + auth token
    - `%LOCALAPPDATA%\PremierSEYO\logs\` — install + daemon logs
 4. Adobe UPIA ile `PremierSEYO.ccx` plugin'i kurulur (Creative Cloud Desktop gerekli)
-5. **`PremierSEYO Daemon`** Scheduled Task'i olusturulur (kullanici login olunca otomatik baslar)
+5. **`PremierSEYO Daemon`** HKCU Run kaydi olusturulur (kullanici login olunca otomatik baslar)
 6. Daemon hemen baslatilir
 7. Kullanici Premiere Pro'yu kapat-ac → **Window > UXP Plugins > PremierSEYO**
 

@@ -32,7 +32,7 @@ Section "Install"
   SetShellVarContext current
 
   DetailPrint "Removing previous per-user install..."
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "if (Get-ScheduledTask -TaskName ''PremierSEYO Daemon'' -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName ''PremierSEYO Daemon'' -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName ''PremierSEYO Daemon'' -Confirm:$false }"'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Remove-ItemProperty -Path ''HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'' -Name ''PremierSEYO Daemon'' -ErrorAction SilentlyContinue"'
   Pop $0
   RMDir /r "$INSTDIR"
 
@@ -42,7 +42,7 @@ Section "Install"
   CreateDirectory "$LOCALAPPDATA\PremierSEYO\logs"
   CreateDirectory "$APPDATA\PremierSEYO"
 
-  DetailPrint "Registering daemon and installing UXP plugin..."
+  DetailPrint "Installing UXP plugin and starting daemon..."
   nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer\windows-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
   ${If} $0 != 0

@@ -4,7 +4,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$TaskName = "PremierSEYO Daemon"
 $LogDir = Join-Path $env:LOCALAPPDATA "PremierSEYO\logs"
 $ConfigDir = Join-Path $env:APPDATA "PremierSEYO"
 $HomeConfigDir = Join-Path $HOME ".config\premier-seyo"
@@ -207,69 +206,25 @@ function Get-PowerShellExe {
   return "powershell.exe"
 }
 
-function Install-DaemonRunKeyFallback([string]$Runner) {
+function Install-DaemonAutostart {
+  Log "Installing daemon autostart through HKCU Run"
+
+  $Runner = Write-DaemonRunner
   $PowerShellExe = Get-PowerShellExe
   $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
   $RunName = "PremierSEYO Daemon"
   $RunValue = "`"$PowerShellExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Runner`""
 
+  Stop-ExistingDaemonProcesses
   New-Item -Path $RunKey -Force | Out-Null
   Set-ItemProperty -Path $RunKey -Name $RunName -Value $RunValue
-  Log "Scheduled Task unavailable. Installed HKCU Run fallback: $RunName"
+  Log "Installed HKCU Run autostart entry: $RunName"
 
   Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", $Runner) -WindowStyle Hidden
   if (!(Test-DaemonPing)) {
-    throw "Daemon did not answer after HKCU Run fallback. See $DaemonErrLog"
+    throw "Daemon did not answer after HKCU Run start. See $DaemonErrLog"
   }
-  Log "PremierSEYO daemon started through HKCU Run fallback"
-}
-
-function Register-DaemonTask {
-  Log "Registering Scheduled Task"
-
-  $Runner = Write-DaemonRunner
-  $PowerShellExe = Get-PowerShellExe
-  Stop-ExistingDaemonProcesses
-
-  try {
-    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-      Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-      Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    }
-
-    $Action = New-ScheduledTaskAction `
-      -Execute $PowerShellExe `
-      -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Runner`"" `
-      -WorkingDirectory (Join-Path $InstallDir "daemon")
-    $Trigger = New-ScheduledTaskTrigger -AtLogOn
-    $Settings = New-ScheduledTaskSettingsSet `
-      -AllowStartIfOnBatteries `
-      -DontStopIfGoingOnBatteries `
-      -StartWhenAvailable `
-      -MultipleInstances IgnoreNew
-
-    Register-ScheduledTask `
-      -TaskName $TaskName `
-      -Action $Action `
-      -Trigger $Trigger `
-      -Settings $Settings `
-      -Description "PremierSEYO local helper daemon" `
-      -Force | Out-Null
-
-    Start-ScheduledTask -TaskName $TaskName
-    if (!(Test-DaemonPing)) {
-      Log "Scheduled Task did not answer ping yet. Starting daemon directly once."
-      Start-Process -FilePath $PowerShellExe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Runner) -WindowStyle Hidden
-      if (!(Test-DaemonPing)) {
-        throw "Daemon did not answer http://127.0.0.1:53117/ping. See $DaemonErrLog"
-      }
-    }
-
-    Log "PremierSEYO daemon task started"
-  } catch {
-    Log "Scheduled Task failed: $($_.Exception.Message)"
-    Install-DaemonRunKeyFallback $Runner
-  }
+  Log "PremierSEYO daemon started through HKCU Run"
 }
 
 try {
@@ -283,7 +238,7 @@ try {
   }
 
   Install-UxpPlugin
-  Register-DaemonTask
+  Install-DaemonAutostart
 
   Log "PremierSEYO Windows install completed"
   exit 0

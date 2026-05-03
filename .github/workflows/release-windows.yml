@@ -9,7 +9,7 @@ on:
         type: string
   push:
     tags:
-      - "v*"
+      - "v*-windows*"
 
 # softprops/action-gh-release release olusturmak icin contents: write ister.
 # Default GITHUB_TOKEN sadece read olabiliyor; explicit permissions blogu garantiler.
