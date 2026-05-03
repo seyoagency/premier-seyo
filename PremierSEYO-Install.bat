@@ -1,10 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
-title PremierSEYO Plugin Kurulum
+title PremierSEYO Tam Kurulum
 
 echo.
 echo  ============================================
-echo   PremierSEYO - Premiere Pro Plugin Kurulum
+echo   PremierSEYO - Tam Kurulum (Plugin + Daemon)
 echo  ============================================
 echo.
 
@@ -13,62 +13,84 @@ set "PLUGIN_ID=com.seyoweb.premierseyo"
 set "PLUGIN_DIR=%APPDATA%\Adobe\UXP\Plugins\External\%PLUGIN_ID%_%VERSION%"
 set "INFO_DIR=%APPDATA%\Adobe\UXP\PluginsInfo\v1"
 set "INFO_FILE=%INFO_DIR%\premierepro.json"
+set "INSTALL_ROOT=%LOCALAPPDATA%\Programs\PremierSEYO"
+set "DAEMON_DIR=%INSTALL_ROOT%\daemon"
+set "RUNTIME_DIR=%INSTALL_ROOT%\runtime"
+set "CONFIG_DIR=%APPDATA%\PremierSEYO"
+set "LOG_DIR=%LOCALAPPDATA%\PremierSEYO\logs"
 set "TEMP_DIR=%TEMP%\premier-seyo-install"
 set "RELEASE_URL=https://github.com/seyoagency/premier-seyo/releases/download/v%VERSION%-windows.3/PremierSEYO-Windows-Portable-%VERSION%.zip"
 
-echo [1/5] Calisma klasoru hazirlaniyor...
+echo [1/7] Calisma klasoru hazirlaniyor...
 if exist "%TEMP_DIR%" rmdir /S /Q "%TEMP_DIR%" 2>nul
 mkdir "%TEMP_DIR%" 2>nul
 
-echo [2/5] Plugin dosyalari indiriliyor (~5 MB)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri '%RELEASE_URL%' -OutFile '%TEMP_DIR%\plugin.zip' -UseBasicParsing"
-if errorlevel 1 (
-    echo HATA: Indirme basarisiz. Internet baglantisi kontrol edip tekrar dene.
-    pause
-    exit /b 1
-)
+echo [2/7] Paket indiriliyor (~150 MB - Node.js + FFmpeg + plugin + daemon)...
+echo        Yavas internette 1-3 dakika surebilir, sabir...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%RELEASE_URL%' -OutFile '%TEMP_DIR%\pkg.zip' -UseBasicParsing"
+if errorlevel 1 ( echo HATA: Indirme basarisiz. Internet baglantisi kontrol et. & pause & exit /b 1 )
 
-echo [3/5] Arsiv aciliyor...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "Expand-Archive -Path '%TEMP_DIR%\plugin.zip' -DestinationPath '%TEMP_DIR%\extracted' -Force"
-if errorlevel 1 (
-    echo HATA: Arsiv acilamadi.
-    pause
-    exit /b 1
-)
+echo [3/7] Arsiv aciliyor (1-2 dakika)...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '%TEMP_DIR%\pkg.zip' -DestinationPath '%TEMP_DIR%\extracted' -Force"
+if not exist "%TEMP_DIR%\extracted\plugin-source" ( echo HATA: plugin-source yok. & pause & exit /b 1 )
+if not exist "%TEMP_DIR%\extracted\daemon" ( echo HATA: daemon yok. & pause & exit /b 1 )
+if not exist "%TEMP_DIR%\extracted\runtime\node\node.exe" ( echo HATA: Portable Node.js yok. & pause & exit /b 1 )
 
-if not exist "%TEMP_DIR%\extracted\plugin-source" (
-    echo HATA: plugin-source klasoru bulunamadi.
-    pause
-    exit /b 1
-)
-
-echo [4/5] Plugin kopyalaniyor: %PLUGIN_DIR%
+echo [4/7] Plugin Premiere'e kopyalaniyor...
 if exist "%PLUGIN_DIR%" rmdir /S /Q "%PLUGIN_DIR%" 2>nul
 mkdir "%PLUGIN_DIR%" 2>nul
 xcopy /E /Y /I /Q "%TEMP_DIR%\extracted\plugin-source\*" "%PLUGIN_DIR%\" >nul
-if errorlevel 1 (
-    echo HATA: Dosyalar kopyalanamadi.
-    pause
-    exit /b 1
-)
 
-echo [5/5] Premiere'in plugin'i tanimasi icin kayit yaziliyor...
 if not exist "%INFO_DIR%" mkdir "%INFO_DIR%" 2>nul
 > "%INFO_FILE%" echo {"plugins":[{"hostMinVersion":"25.6.0","name":"PremierSEYO","path":"$localPlugins/External/%PLUGIN_ID%_%VERSION%","pluginId":"%PLUGIN_ID%","status":"enabled","type":"uxp","versionString":"%VERSION%"}]}
+
+echo [5/7] Daemon + portable Node.js + FFmpeg kuruluyor: %INSTALL_ROOT%
+if exist "%INSTALL_ROOT%" rmdir /S /Q "%INSTALL_ROOT%" 2>nul
+mkdir "%DAEMON_DIR%" 2>nul
+mkdir "%RUNTIME_DIR%" 2>nul
+xcopy /E /Y /I /Q "%TEMP_DIR%\extracted\daemon\*" "%DAEMON_DIR%\" >nul
+xcopy /E /Y /I /Q "%TEMP_DIR%\extracted\runtime\*" "%RUNTIME_DIR%\" >nul
+
+if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%" 2>nul
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" 2>nul
+
+REM Wrapper .cmd: ffmpeg PATH'ini ekle, sonra node ile daemon'u baslat
+> "%INSTALL_ROOT%\start-daemon.cmd" (
+    echo @echo off
+    echo set "PATH=%RUNTIME_DIR%\ffmpeg\bin;%%PATH%%"
+    echo "%RUNTIME_DIR%\node\node.exe" "%DAEMON_DIR%\server.js"
+)
+
+echo [6/7] Daemon kullanici login'inde otomatik baslayacak (HKCU Run)...
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "PremierSEYODaemon" /t REG_SZ /d "\"%INSTALL_ROOT%\start-daemon.cmd\"" /f >nul
+
+echo [7/7] Daemon simdi baslatiliyor...
+start "PremierSEYO Daemon" /B "%INSTALL_ROOT%\start-daemon.cmd"
+
+REM Daemon'un ayaga kalkmasini bekle (ilk acilis 3-5 sn)
+timeout /t 4 /nobreak >nul
+powershell -NoProfile -Command "try { (Invoke-WebRequest -Uri 'http://127.0.0.1:53117/ping' -UseBasicParsing -TimeoutSec 3).StatusCode } catch { 0 }" > "%TEMP_DIR%\ping.txt"
+set /p PING_STATUS=<"%TEMP_DIR%\ping.txt"
 
 rmdir /S /Q "%TEMP_DIR%" 2>nul
 
 echo.
 echo  ============================================
-echo   PremierSEYO Plugin kuruldu!
+if "%PING_STATUS%"=="200" (
+    echo   ^>^>  PremierSEYO basariyla kuruldu! ^<^<
+    echo   Daemon calisiyor: http://127.0.0.1:53117
+) else (
+    echo   ^>^>  Plugin kuruldu, daemon ilk basta yavas olabilir ^<^<
+    echo   Premiere'i acmadan once 30 sn bekle.
+    echo   Sorun devam ederse: %LOG_DIR%\daemon.log
+)
 echo  ============================================
 echo.
 echo   Sonraki adimlar:
 echo    1. Premiere Pro'yu kapat (calisiyorsa)
 echo    2. Tekrar ac
-echo    3. Window menusu ^> UXP Plugins ^> PremierSEYO
+echo    3. Window ^> UXP Plugins ^> PremierSEYO
+echo    4. Sag ust ayar ikonu ^> Deepgram API key gir
 echo.
-echo  Kapatmak icin herhangi bir tusa bas...
+echo  Pencereyi kapatmak icin herhangi bir tusa bas...
 pause >nul

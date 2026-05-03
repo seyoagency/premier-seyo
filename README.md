@@ -70,25 +70,37 @@ Script şunları yapar:
 - macOS LaunchAgent kurulumu (Mac her açılınca daemon otomatik başlar)
 - Plugin'i Premiere UXP install dizinine kopyalar (`npm run build`)
 
-## Windows Kurulum
+## Windows Kurulum (Önerilen — tek dosya, çift tık)
 
-Windows dağıtımı tek tık installer olarak hazırlanır:
+### Tek-tık `.bat` kurulumu (plugin + daemon, tam çalışır)
+
+1. **[PremierSEYO-Install.bat](https://github.com/seyoagency/premier-seyo/releases/latest/download/PremierSEYO-Install.bat)** dosyasını indir
+2. **Çift tıkla** (Defender takmaz — `.bat` standart Windows tooling, kendi başına `.exe` indirmiyor)
+3. CMD penceresi açılır → ~150 MB indirir, 1-3 dakikada biter
+4. Daemon otomatik başlar, `http://127.0.0.1:53117/ping` ile doğrulanır
+5. **Premiere Pro'yu kapat → tekrar aç** → **Window > UXP Plugins > PremierSEYO**
+6. Sağ üst ayar ikonu → Deepgram API key gir → hazır
+
+`.bat` ne yapar:
+- GitHub'dan tek ZIP indirir (plugin + daemon + portable Node.js + portable FFmpeg, ~150 MB)
+- Plugin: `%APPDATA%\Adobe\UXP\Plugins\External\com.seyoweb.premierseyo_<version>\`
+- Daemon + runtime: `%LOCALAPPDATA%\Programs\PremierSEYO\`
+- HKCU Run kaydı: kullanıcı login'inde daemon otomatik başlar
+- Hiçbir sistem-wide kurulum yok, admin yetkisi gerekmez
+
+### `.exe` Installer (alternatif — bazı sistemlerde Defender uyarı verebilir)
 
 ```text
 PremierSEYO-Setup-x64-<version>.exe
 ```
 
-Installer şunları yapar:
-- PremierSEYO daemon dosyalarını `%LOCALAPPDATA%\Programs\PremierSEYO` altına kurar.
-- Deepgram key ve token dosyaları için `%APPDATA%\PremierSEYO` kullanır.
-- Logları `%LOCALAPPDATA%\PremierSEYO\logs` altına yazar.
-- Daemon'u kullanıcı oturumunda otomatik başlatmak için `PremierSEYO Daemon` HKCU Run kaydını oluşturur.
-- Bundled `PremierSEYO.ccx` dosyasını Adobe UPIA ile kurar.
+Installer ile aynı şeyi yapar, ama NSIS .exe imzasız olduğu için Smart App Control aktifse SmartScreen "unknown publisher" der. `.bat` yolu daha sorunsuz.
 
 Gereksinimler:
 - Windows 10/11 x64
 - Premiere Pro 25.6+
-- Creative Cloud Desktop / UPIA kurulu ve çalışabilir durumda
+- Creative Cloud Desktop **gerekmez**
+- Admin yetkisi gerekmez (kullanıcı dizinine kuruluyor)
 
 ### 3. Premiere Pro
 
