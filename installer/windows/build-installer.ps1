@@ -29,7 +29,8 @@ try {
   if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
   Compress-Archive -Path (Join-Path $PluginSource "*") -DestinationPath $ZipPath -Force
   Move-Item $ZipPath $CcxPath -Force
-  Remove-Item $PluginSource -Recurse -Force
+  # Keep plugin-source in the installer. windows-install.ps1 uses it as a
+  # fallback when Adobe UPIA is missing or rejects the unsigned local CCX.
 
   if (!$Makensis) {
     $Candidates = @(

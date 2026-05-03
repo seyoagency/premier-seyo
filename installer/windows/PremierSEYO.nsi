@@ -46,7 +46,7 @@ Section "Install"
   nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer\windows-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP "PremierSEYO setup failed. Check %LOCALAPPDATA%\PremierSEYO\logs for details."
+    MessageBox MB_ICONSTOP "PremierSEYO setup failed. Check $LOCALAPPDATA\PremierSEYO\logs\install.log for details."
     Abort
   ${EndIf}
 
