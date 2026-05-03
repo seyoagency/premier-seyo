@@ -502,17 +502,19 @@ function updateDepBadge(name, ok) {
 // ——— AUTO-CUT: Analyze ———
 async function handleAnalyze() {
   const btn = document.getElementById("btn-analyze");
+  const origBtnLabel = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> Lütfen bekleyin, analiz ediliyor...';
   _setDisabled(btn, true);
-  showProgress("cut", true, "Ses dosyasi hazirlaniyor...");
-  setStatus("Analiz ediliyor...");
+  showProgress("cut", true, "Sıralı işlem başlatılıyor...");
+  setStatus("İşlem başladı — sequence uzunluğuna göre 1-3 dakika sürebilir, lütfen bekleyin...");
 
   try {
-    updateProgress("cut", 10, "Sequence'den ses cikariliyor...");
+    updateProgress("cut", 10, "1/4 — Sequence'den ses çıkarılıyor (FFmpeg ile mixdown, 30 sn–2 dk sürebilir)...");
     const exported = await audioExporter.exportAudio({ sampleRate: 48000, mono: true });
     currentAudioPath = exported.outputPath;
     const clipsMeta = exported.clips;
 
-    updateProgress("cut", 40, "Sessizlikler tespit ediliyor...");
+    updateProgress("cut", 40, "2/4 — Deepgram Nova-3 ile sessizlikler tespit ediliyor (audio yükleniyor, 30 sn–1 dk)...");
     const settings = getCurrentSettings();
     const sd = await silenceDetector.detect(currentAudioPath, {
       noiseThreshold: settings.silenceThreshold,
@@ -523,11 +525,11 @@ async function handleAnalyze() {
 
     let breathRegions = [];
     if (settings.detectBreaths) {
-      updateProgress("cut", 70, "Nefes sesleri analiz ediliyor...");
+      updateProgress("cut", 70, "3/4 — Nefes sesleri tespit ediliyor (yerel hesaplama, hızlı)...");
       breathRegions = breathDetector.findBreathCandidates(silenceRegions);
     }
 
-    updateProgress("cut", 90, "Segmentler hesaplaniyor...");
+    updateProgress("cut", 90, "4/4 — Kes/Tut segmentleri hesaplanıyor (yerel, hızlı)...");
     analysisResult = segmentBuilder.build(totalDuration, silenceRegions, breathRegions, {
       paddingBefore: settings.paddingBefore,
       paddingAfter: settings.paddingAfter,
@@ -555,6 +557,7 @@ async function handleAnalyze() {
     console.error("Analiz hatasi:", err);
     setStatus(`Hata: ${err.message}`, "error");
   } finally {
+    btn.innerHTML = origBtnLabel;
     _setDisabled(btn, false);
     setTimeout(() => showProgress("cut", false), 1000);
   }
@@ -589,18 +592,21 @@ async function handleApplyCut() {
   }
 
   const btn = document.getElementById("btn-apply-cut");
+  const origBtnLabel = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> Lütfen bekleyin, kesim uygulanıyor...';
   _setDisabled(btn, true);
-  showProgress("cut", true, "Kesim basliyor (Cmd+Z ile geri alinabilir)...");
+  showProgress("cut", true, "Kesim başlatılıyor (Cmd+Z ile geri alınabilir)...");
+  setStatus("Kesim uygulanıyor — segment sayısına göre 30 sn–2 dk sürebilir, lütfen bekleyin...");
 
   try {
-    updateProgress("cut", 10, "Sequence aliniyor...");
+    updateProgress("cut", 10, "1/3 — Aktif sequence alınıyor...");
     const seq = await duplicator.duplicateActiveSequence(" - AutoCut");
 
-    updateProgress("cut", 20, "Kesim uygulaniyor...");
+    updateProgress("cut", 20, "2/3 — Orijinal klipler siliniyor + yeni parçalar yerleştiriliyor (effects korunarak)...");
     await daemon.log("reconstruct", `START keep=${analysisResult.keep.length} clipsMeta=${(analysisResult.clipsMeta||[]).length}`);
     const result = await reconstructor.reconstruct(
       seq,
-      (pct) => updateProgress("cut", 20 + Math.round(pct * 0.8), `%${pct}`),
+      (pct) => updateProgress("cut", 20 + Math.round(pct * 0.7), `Parça yerleştiriliyor — %${pct}`),
       analysisResult.keep,
       analysisResult.clipsMeta,
       (stageMsg) => {
@@ -611,12 +617,13 @@ async function handleApplyCut() {
     );
     await daemon.log("reconstruct", `END success=${result.success} message=${result.message}`);
 
-    updateProgress("cut", 100, "Tamamlandi");
+    updateProgress("cut", 100, "3/3 — Tamamlandı");
     setStatus(`AutoCut: ${result.message}`, result.success ? "success" : "error");
   } catch (err) {
     console.error("Cut hatasi:", err);
     setStatus(`Hata: ${err.message}`, "error");
   } finally {
+    btn.innerHTML = origBtnLabel;
     _setDisabled(btn, false);
     setTimeout(() => showProgress("cut", false), 1500);
   }
@@ -625,12 +632,14 @@ async function handleApplyCut() {
 // ——— AUTO-SRT: Transcribe ———
 async function handleTranscribe() {
   const btn = document.getElementById("btn-transcribe");
+  const origBtnLabel = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> Lütfen bekleyin, transkript ediliyor...';
   _setDisabled(btn, true);
-  showProgress("srt", true, "Ses dosyasi hazirlaniyor...");
-  setStatus("Transkript ediliyor...");
+  showProgress("srt", true, "Sıralı işlem başlatılıyor...");
+  setStatus("Transkript başladı — sequence uzunluğuna göre 1-2 dakika sürebilir, lütfen bekleyin...");
 
   try {
-    updateProgress("srt", 10, "Ses cikariliyor...");
+    updateProgress("srt", 10, "1/5 — Sequence'den ses çıkarılıyor (FFmpeg ile mixdown, 30 sn–1 dk)...");
     const { outputPath: audioPath } = await audioExporter.exportAudio({
       sampleRate: 16000,
       mono: true,
@@ -639,7 +648,7 @@ async function handleTranscribe() {
     currentAudioPath = audioPath;
 
     // Auto-offset icin: gercek konusma baslangicini bul (silence detect)
-    updateProgress("srt", 15, "Konusma baslangici tespit ediliyor...");
+    updateProgress("srt", 15, "2/5 — Konuşma başlangıcı tespit ediliyor (auto-offset, hızlı)...");
     let realSpeechStart = 0;
     let silenceRegions = [];
     try {
@@ -657,7 +666,7 @@ async function handleTranscribe() {
       console.warn("Auto-offset silence detect hatasi:", e.message);
     }
 
-    updateProgress("srt", 20, "Deepgram Nova-3 transkripsiyon (Türkçe)...");
+    updateProgress("srt", 20, "3/5 — Deepgram Nova-3 ile transkripsiyon (audio yükleniyor + işleniyor, 30 sn–1 dk)...");
     const preTranscribeSettings = getCurrentSettings();
     const language = preTranscribeSettings.language || "tr";
 
@@ -701,7 +710,7 @@ async function handleTranscribe() {
       throw new Error("Anlamli konusma segmenti bulunamadi");
     }
 
-    updateProgress("srt", 85, "Altyazilar olusturuluyor...");
+    updateProgress("srt", 85, "4/5 — Altyazı segmentleri oluşturuluyor (yerel, hızlı)...");
 
     // Kelime listesi topla (word-level yoksa segment-level kullan)
     const allWords = [];
@@ -737,14 +746,15 @@ async function handleTranscribe() {
       segments,
       captions,
     };
-    updateProgress("srt", 100, "Tamamlandi");
+    updateProgress("srt", 100, "5/5 — Tamamlandı");
     displaySRTPreview(captions);
-    setStatus(`Transkript: ${captions.length} altyazi`, "success");
+    setStatus(`Transkript hazır: ${captions.length} altyazı oluşturuldu. Önizlemeyi inceleyip Kaydet'e bas.`, "success");
 
   } catch (err) {
     console.error("SRT hatasi:", err);
     setStatus(`Hata: ${err.message}`, "error");
   } finally {
+    btn.innerHTML = origBtnLabel;
     _setDisabled(btn, false);
     setTimeout(() => showProgress("srt", false), 1500);
   }
