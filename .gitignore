@@ -19,6 +19,10 @@ tools/
 vendor/windows/node/
 vendor/windows/ffmpeg/
 
+# macOS offline installer runtimes (large binaries)
+vendor/macos/arm64/
+vendor/macos/x86_64/
+
 # IDE
 .vscode/
 .idea/
