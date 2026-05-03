@@ -131,7 +131,14 @@ function parseBody(req) {
 }
 
 function shellQuote(value) {
-  return `'${String(value).replace(/'/g, "'\\''")}'`;
+  const s = String(value);
+  if (process.platform === "win32") {
+    // Windows cmd: cift tirnak ile sar, ic cift tirnaklari escape et
+    // Tek tirnak Windows'ta quoting degil, literal karakter
+    return `"${s.replace(/"/g, '\\"')}"`;
+  }
+  // POSIX (macOS/Linux): tek tirnak ile sar
+  return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
 function humanizeFFmpegError(stderr) {
