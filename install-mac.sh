@@ -85,7 +85,7 @@ INSTALL_DIR="$HOME/.local/share/premier-seyo"
 mkdir -p "$INSTALL_DIR"
 c_blue "==> PremierSEYO v${VERSION} indiriliyor → ${INSTALL_DIR}"
 TMP_TAR=$(mktemp -t premier-seyo-XXXXXX.tar.gz)
-curl -fsSL "https://github.com/${REPO}/archive/refs/tags/v${VERSION}.tar.gz" -o "$TMP_TAR"
+curl -fsSL "https://github.com/${REPO}/archive/refs/heads/master.tar.gz" -o "$TMP_TAR"
 # Eski icerigi temizle
 find "$INSTALL_DIR" -mindepth 1 -delete 2>/dev/null || true
 tar xzf "$TMP_TAR" -C "$INSTALL_DIR" --strip-components=1
