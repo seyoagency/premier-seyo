@@ -34,9 +34,13 @@ async function exportAudio({ sampleRate = 48000, mono = false, suffix = "" } = {
     throw new Error("Sequence'de ses klibi bulunamadi");
   }
 
-  // outputPath'i gonderme — daemon kendi TMP_DIR'ine yazsin
+  // Mixdown icin overlap'ler tek kaynaga indirilir (flatten); daemon'a flat liste gider.
+  // Reconstructor'a HAM listeyi donduruyoruz ki effects snapshot her track item'a 1-1
+  // eslesebilsin (path + timelineStart key'i ile).
+  const flattenedForMix = timelineMapper.flattenTimelineClips(clips);
+
   const res = await daemon.call("/build-sequence-audio", {
-    clips,
+    clips: flattenedForMix,
     sampleRate,
     mono,
   }, 600000);
@@ -140,7 +144,10 @@ async function collectSequenceClips(sequence) {
     }
   }
 
-  return timelineMapper.flattenTimelineClips(unique);
+  // Ham unique liste donduruyoruz — flatten exportAudio() icinde mixdown icin yapilir.
+  // Boylelikle reconstructor effects snapshot loop'u clipsMeta uzerinde her track item'a
+  // 1-1 eslesir (flatten slice'lar yerine).
+  return unique;
 }
 
 module.exports = { exportAudio, collectSequenceClips };
