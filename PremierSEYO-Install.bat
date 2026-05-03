@@ -53,16 +53,9 @@ if exist "%PLUGIN_DIR%" rmdir /S /Q "%PLUGIN_DIR%" 2>nul
 mkdir "%PLUGIN_DIR%" 2>nul
 xcopy /E /Y /I /Q "%TEMP_DIR%\extracted\plugin-source\*" "%PLUGIN_DIR%\" >nul
 
-REM PluginsInfo JSON: mevcut diger UXP plugin'leri silme, kendi entry'mizi merge et
+REM PluginsInfo JSON: Premiere'in plugin'i tanimasi icin
 if not exist "%INFO_DIR%" mkdir "%INFO_DIR%" 2>nul
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$file='%INFO_FILE%';" ^
-  "$obj = if (Test-Path $file) { try { Get-Content -Raw $file | ConvertFrom-Json } catch { @{plugins=@()} } } else { @{plugins=@()} };" ^
-  "if (-not $obj.plugins) { $obj = @{plugins=@()} };" ^
-  "$entry = [PSCustomObject]@{hostMinVersion='25.6.0'; name='PremierSEYO'; path='`$localPlugins/External/%PLUGIN_ID%_%VERSION%'; pluginId='%PLUGIN_ID%'; status='enabled'; type='uxp'; versionString='%VERSION%'};" ^
-  "$keep = @($obj.plugins | Where-Object { $_.pluginId -ne '%PLUGIN_ID%' });" ^
-  "$result = [PSCustomObject]@{plugins = ($keep + $entry)};" ^
-  "$result | ConvertTo-Json -Depth 10 -Compress | Set-Content -Encoding ASCII -NoNewline '%INFO_FILE%'"
+> "%INFO_FILE%" echo {"plugins":[{"hostMinVersion":"25.6.0","name":"PremierSEYO","path":"$localPlugins/External/%PLUGIN_ID%_%VERSION%","pluginId":"%PLUGIN_ID%","status":"enabled","type":"uxp","versionString":"%VERSION%"}]}
 
 echo [5/8] Daemon + portable Node.js + FFmpeg kuruluyor...
 echo        Yer: %INSTALL_ROOT%
