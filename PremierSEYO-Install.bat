@@ -62,8 +62,8 @@ echo [4/8] Plugin Premiere'e kopyalaniyor...
 if exist "%PLUGIN_DIR%" rmdir /S /Q "%PLUGIN_DIR%" 2>nul
 if exist "%PLUGIN_DIR%" (
     echo.
-    echo  HATA: Plugin dizini silinemiyor. Premiere Pro acik.
-    echo  Lutfen Premiere'i tamamen kapat (File ^> Quit) ve bu .bat'i tekrar calistir.
+    echo  HATA: Plugin dizini silinemiyor. Premiere Pro acik olabilir.
+    echo  Lutfen Premiere'i tamamen kapat - File menusu - Quit - sonra bu .bat'i tekrar calistir.
     echo.
     pause
     exit /b 1
