@@ -698,22 +698,13 @@ async function handleTranscribe() {
     // stepper/slider değişiminde Deepgram'a tekrar gitmeden regroup için saklanır.
     const rawSegments = segments;
 
-    // Auto-offset hesapla: Whisper'in ilk word.start'i ile gercek konusma
-    // baslangici arasindaki fark. Sonra kullanici slider degeri eklenir
-    // (manual ince ayar — default 0).
+    // Auto-offset KAPATILDI: Deepgram word-level timestamp'leri zaten dogru
+    // (mixdown'in 0'indan itibaren). Onceki algoritma realSpeechStart vs
+    // whisperFirstWord farkini hesaplayip kelimeleri kaydiriyordu — Deepgram'in
+    // bazen silence icinde sahte kelime tanimasi durumunda yanlis yonde kayma
+    // yarariyordu. Artik sadece kullanicinin manual offset slider'i uygulaniyor.
+    const autoOffsetSec = 0;
     const whisperFirstWord = findFirstSpeechStart(segments);
-    let autoOffsetSec = 0;
-    if (Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity && realSpeechStart > 0) {
-      autoOffsetSec = realSpeechStart - whisperFirstWord;
-      // Auto offset altyaziyi sesin ONUNE cekmemeli; sadece gecikmisse ileri al.
-      // Sequence basinda uzun bosluk olabilir (orn. 30s intro), 2 saniye yetmez —
-      // 60 saniye'ye kadar izin ver. realSpeechStart silence-detect'ten dogru gelir.
-      autoOffsetSec = Math.max(0, Math.min(60, autoOffsetSec));
-      if (autoOffsetSec < 0.04) autoOffsetSec = 0;
-    }
-    if (autoOffsetSec) {
-      segments = applyOffsetToSegments(segments, autoOffsetSec);
-    }
     if (silenceRegions.length > 0) {
       segments = stripSilenceOnlyWords(segments, silenceRegions);
     }
@@ -724,9 +715,8 @@ async function handleTranscribe() {
     }
 
     setStatus(
-      `Auto-offset: +${Math.round(autoOffsetSec * 1000)}ms ` +
-      `(gercek ${realSpeechStart.toFixed(2)}s, Whisper ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s) ` +
-      `manuel ${Math.round(manualOffsetSec * 1000)}ms`
+      `Konusma baslangici: ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s ` +
+      `(silence: ${realSpeechStart.toFixed(2)}s) — manuel offset: ${Math.round(manualOffsetSec * 1000)}ms`
     );
 
     if (segments.length === 0) {
