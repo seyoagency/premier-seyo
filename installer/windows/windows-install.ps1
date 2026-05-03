@@ -206,6 +206,17 @@ function Get-PowerShellExe {
   return "powershell.exe"
 }
 
+function Remove-LegacyScheduledTask {
+  try {
+    $LegacyTask = Get-ScheduledTask -TaskName "PremierSEYO Daemon" -ErrorAction SilentlyContinue
+    if ($LegacyTask) {
+      Stop-ScheduledTask -TaskName "PremierSEYO Daemon" -ErrorAction SilentlyContinue
+      Unregister-ScheduledTask -TaskName "PremierSEYO Daemon" -Confirm:$false -ErrorAction SilentlyContinue
+      Log "Removed legacy Scheduled Task autostart entry"
+    }
+  } catch {}
+}
+
 function Install-DaemonAutostart {
   Log "Installing daemon autostart through HKCU Run"
 
@@ -216,6 +227,7 @@ function Install-DaemonAutostart {
   $RunValue = "`"$PowerShellExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Runner`""
 
   Stop-ExistingDaemonProcesses
+  Remove-LegacyScheduledTask
   New-Item -Path $RunKey -Force | Out-Null
   Set-ItemProperty -Path $RunKey -Name $RunName -Value $RunValue
   Log "Installed HKCU Run autostart entry: $RunName"
