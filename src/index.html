@@ -4606,16 +4606,8 @@ ${cap.text}`;
       let segments = await transcriber.transcribe(audioPath, { language });
       segments = sanitizeTranscriptSegments(segments);
       const rawSegments = segments;
+      const autoOffsetSec = 0;
       const whisperFirstWord = findFirstSpeechStart(segments);
-      let autoOffsetSec = 0;
-      if (Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity && realSpeechStart > 0) {
-        autoOffsetSec = realSpeechStart - whisperFirstWord;
-        autoOffsetSec = Math.max(0, Math.min(60, autoOffsetSec));
-        if (autoOffsetSec < 0.04) autoOffsetSec = 0;
-      }
-      if (autoOffsetSec) {
-        segments = applyOffsetToSegments(segments, autoOffsetSec);
-      }
       if (silenceRegions.length > 0) {
         segments = stripSilenceOnlyWords(segments, silenceRegions);
       }
@@ -4624,7 +4616,7 @@ ${cap.text}`;
         segments = applyOffsetToSegments(segments, manualOffsetSec);
       }
       setStatus(
-        `Auto-offset: +${Math.round(autoOffsetSec * 1e3)}ms (gercek ${realSpeechStart.toFixed(2)}s, Whisper ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s) manuel ${Math.round(manualOffsetSec * 1e3)}ms`
+        `Konusma baslangici: ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s (silence: ${realSpeechStart.toFixed(2)}s) \u2014 manuel offset: ${Math.round(manualOffsetSec * 1e3)}ms`
       );
       if (segments.length === 0) {
         throw new Error("Anlamli konusma segmenti bulunamadi");
