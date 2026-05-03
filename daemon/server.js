@@ -290,22 +290,34 @@ async function handleWriteFile(req, res) {
       return sendJson(res, 400, { ok: false, error: "filePath ve content gerekli" });
     }
 
-    // Guvenlik: sadece TMP_DIR veya kullanicinin Documents/Desktop dizinine yaz
-    const safeRoots = [
-      TMP_DIR,
-      path.join(os.homedir(), "Documents"),
-      path.join(os.homedir(), "Desktop"),
-      path.join(os.homedir(), "Downloads"),
-      path.join(os.homedir(), "Movies"),
-    ];
-
+    // Guvenlik: sistem klasorlerine yazma. Kullanici home altindaki her yere
+    // ve external drive'lara izin ver (kullanici Save As ile kendi sectigi yol).
     const resolved = path.resolve(filePath);
-    const isSafe = safeRoots.some((root) => {
-      const safeRoot = path.resolve(root);
-      return resolved === safeRoot || resolved.startsWith(safeRoot + path.sep);
+    const lowResolved = resolved.toLowerCase();
+
+    const blockedRoots = process.platform === "win32"
+      ? [
+          (process.env.SystemRoot || "C:\\Windows").toLowerCase(),
+          "c:\\program files",
+          "c:\\program files (x86)",
+          "c:\\programdata",
+        ]
+      : [
+          "/system",
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/etc",
+          "/private/etc",
+          "/Library/System",
+        ];
+
+    const isBlocked = blockedRoots.some((b) => {
+      const lb = b.toLowerCase();
+      return lowResolved === lb || lowResolved.startsWith(lb + path.sep);
     });
-    if (!isSafe) {
-      return sendJson(res, 403, { ok: false, error: `Bu konuma yazmaya izin yok: ${resolved}` });
+    if (isBlocked) {
+      return sendJson(res, 403, { ok: false, error: `Sistem konumuna yazmaya izin yok: ${resolved}` });
     }
 
     fs.mkdirSync(path.dirname(resolved), { recursive: true });
