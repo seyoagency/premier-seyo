@@ -94,15 +94,19 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
 
   // ——— Phase 0: Effects snapshot ———
   // Orijinal trackitem'lar silinmeden ÖNCE her clipsMeta entry'si için video
-  // ve audio component-chain snapshot'ı al. Phase 2 insert sonrası her
-  // pieceyle eşleşen snapshot yeni TrackItem'a uygulanır.
-  // Hata toleransı: snapshot başarısızsa kesim akışı bozulmaz.
-  const effectsByMetaIndex = new Map();
+  // ve audio component-chain snapshot'ı al. Phase 2 insert sonrası her piece'e
+  // path + originalTimelineStart key'i ile eşleşen snapshot yeni TrackItem'a uygulanır.
+  //
+  // ÖNEMLİ: Önceki sürümde lookup `piece.originalIndex` (flatten slice indeksi)
+  // ile yapılıyordu — bu multi-clip senaryolarda tüm piece'leri aynı clipsMeta
+  // entry'sine map ediyordu (clip[1] hep kazanırdı). Path-keyed lookup ile her
+  // piece kendi orijinal track item'inin effects'ini alıyor.
+  const effectsByPath = new Map();
   logFx("fx-phase0-start", `clipsMeta=${clipsMeta.length} V=${videoItems.length} A=${audioItems.length} mtV=${mediaTypeVideo} mtA=${mediaTypeAudio}`);
   try {
     for (let j = 0; j < clipsMeta.length; j++) {
       const meta = clipsMeta[j];
-      if (!meta) continue;
+      if (!meta || !meta.path) continue;
       const matchVideo = videoItems.find((vi) => (
         Number(vi.trackIndex) === Number(meta.trackIndex) &&
         Math.abs(vi.start - (meta.timelineStart || 0)) < 0.05
@@ -122,12 +126,16 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
         aCompCount = (snap && snap.components) ? snap.components.length : 0;
         if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.audio = snap;
       }
-      logFx("fx-snap", `meta#${j} path=${(meta.path||"").split("/").pop()} tlStart=${(meta.timelineStart||0).toFixed(3)} trk=${meta.trackIndex} matchV=${!!matchVideo} matchA=${!!matchAudio} V.comp=${vCompCount} A.comp=${aCompCount} stored=${!!(entry.video||entry.audio)}`);
-      if (entry.video || entry.audio) effectsByMetaIndex.set(j, entry);
+      // Path + timelineStart key — aynı kaynak dosya farklı pozisyonlarda da
+      // birden fazla track item olabilir, her birinin effects'i ayrı saklanır.
+      const startKey = (meta.timelineStart || 0).toFixed(2);
+      const key = `${meta.path}|${startKey}`;
+      logFx("fx-snap", `meta#${j} path=${(meta.path||"").split("/").pop()} tlStart=${startKey} trk=${meta.trackIndex} matchV=${!!matchVideo} matchA=${!!matchAudio} V.comp=${vCompCount} A.comp=${aCompCount} stored=${!!(entry.video||entry.audio)}`);
+      if (entry.video || entry.audio) effectsByPath.set(key, entry);
     }
-    logFx("fx-phase0-end", `snapshots=${effectsByMetaIndex.size}`);
-    if (effectsByMetaIndex.size > 0) {
-      stageLog(`Effects snapshot: ${effectsByMetaIndex.size} klip için kayıt alındı`);
+    logFx("fx-phase0-end", `snapshots=${effectsByPath.size}`);
+    if (effectsByPath.size > 0) {
+      stageLog(`Effects snapshot: ${effectsByPath.size} klip için kayıt alındı`);
     }
   } catch (e) {
     logFx("fx-phase0-fail", e.message);
@@ -261,9 +269,22 @@ async function reconstruct(inputSequence, onProgress, keepSegments, clipsMeta, o
       // Phase 0'da kaydedilen orijinal effects (Motion + filter + keyframes) bu
       // segmente ait piece'a göre source-time map ile yeniden uygulanır.
       try {
-        const metaIdx = piece.originalIndex;
-        const entry = (metaIdx != null) ? effectsByMetaIndex.get(metaIdx) : null;
-        logFx("fx-apply-lookup", `seg=${segmentNumber} pieceMetaIdx=${metaIdx} hasEntry=${!!entry} V.snap=${!!(entry && entry.video)} A.snap=${!!(entry && entry.audio)}`);
+        // path + originalTimelineStart key ile lookup
+        const piecePath = piece.path || "";
+        const pieceOrigStart = (piece.originalTimelineStart != null
+          ? piece.originalTimelineStart
+          : piece.timelineStart || 0).toFixed(2);
+        const lookupKey = `${piecePath}|${pieceOrigStart}`;
+        let entry = effectsByPath.get(lookupKey);
+        // Fallback: aynı path'te tek bir entry varsa onu kullan (originalTimelineStart
+        // mismatch durumunda — örn. flatten slice merge sonrası start kayması)
+        if (!entry) {
+          const sameSourceEntries = [...effectsByPath.entries()].filter(([k]) => k.startsWith(piecePath + "|"));
+          if (sameSourceEntries.length === 1) {
+            entry = sameSourceEntries[0][1];
+          }
+        }
+        logFx("fx-apply-lookup", `seg=${segmentNumber} key=${piecePath.split("/").pop()}|${pieceOrigStart} hasEntry=${!!entry} V.snap=${!!(entry && entry.video)} A.snap=${!!(entry && entry.audio)}`);
         if (entry && (entry.video || entry.audio)) {
           const afterInsert = await seqEditor.getTrackItems(sequence);
           // En yeni track item'ı = belirli track içinde max start (insert ripple

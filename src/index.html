@@ -2632,8 +2632,9 @@ button::before {
         if (clips.length === 0) {
           throw new Error("Sequence'de ses klibi bulunamadi");
         }
+        const flattenedForMix = timelineMapper.flattenTimelineClips(clips);
         const res = await daemon2.call("/build-sequence-audio", {
-          clips,
+          clips: flattenedForMix,
           sampleRate,
           mono
         }, 6e5);
@@ -2707,7 +2708,7 @@ button::before {
             unique.push(c);
           }
         }
-        return timelineMapper.flattenTimelineClips(unique);
+        return unique;
       }
       module.exports = { exportAudio, collectSequenceClips };
     }
@@ -3619,12 +3620,12 @@ ${cap.text}`;
           };
         }
         let stage = "baslangic";
-        const effectsByMetaIndex = /* @__PURE__ */ new Map();
+        const effectsByPath = /* @__PURE__ */ new Map();
         logFx("fx-phase0-start", `clipsMeta=${clipsMeta.length} V=${videoItems.length} A=${audioItems.length} mtV=${mediaTypeVideo} mtA=${mediaTypeAudio}`);
         try {
           for (let j = 0; j < clipsMeta.length; j++) {
             const meta = clipsMeta[j];
-            if (!meta) continue;
+            if (!meta || !meta.path) continue;
             const matchVideo = videoItems.find((vi) => Number(vi.trackIndex) === Number(meta.trackIndex) && Math.abs(vi.start - (meta.timelineStart || 0)) < 0.05);
             const matchAudio = audioItems.find((ai) => Math.abs(ai.start - (meta.timelineStart || 0)) < 0.05);
             const entry = {};
@@ -3639,12 +3640,14 @@ ${cap.text}`;
               aCompCount = snap && snap.components ? snap.components.length : 0;
               if (effectsPreserver.hasMeaningfulSnapshot(snap)) entry.audio = snap;
             }
-            logFx("fx-snap", `meta#${j} path=${(meta.path || "").split("/").pop()} tlStart=${(meta.timelineStart || 0).toFixed(3)} trk=${meta.trackIndex} matchV=${!!matchVideo} matchA=${!!matchAudio} V.comp=${vCompCount} A.comp=${aCompCount} stored=${!!(entry.video || entry.audio)}`);
-            if (entry.video || entry.audio) effectsByMetaIndex.set(j, entry);
+            const startKey = (meta.timelineStart || 0).toFixed(2);
+            const key = `${meta.path}|${startKey}`;
+            logFx("fx-snap", `meta#${j} path=${(meta.path || "").split("/").pop()} tlStart=${startKey} trk=${meta.trackIndex} matchV=${!!matchVideo} matchA=${!!matchAudio} V.comp=${vCompCount} A.comp=${aCompCount} stored=${!!(entry.video || entry.audio)}`);
+            if (entry.video || entry.audio) effectsByPath.set(key, entry);
           }
-          logFx("fx-phase0-end", `snapshots=${effectsByMetaIndex.size}`);
-          if (effectsByMetaIndex.size > 0) {
-            stageLog(`Effects snapshot: ${effectsByMetaIndex.size} klip i\xE7in kay\u0131t al\u0131nd\u0131`);
+          logFx("fx-phase0-end", `snapshots=${effectsByPath.size}`);
+          if (effectsByPath.size > 0) {
+            stageLog(`Effects snapshot: ${effectsByPath.size} klip i\xE7in kay\u0131t al\u0131nd\u0131`);
           }
         } catch (e) {
           logFx("fx-phase0-fail", e.message);
@@ -3746,9 +3749,17 @@ ${cap.text}`;
             await new Promise((r) => setTimeout(r, 180));
             ({ project, sequence, editor } = await refreshSequenceContext(ppro, sequence));
             try {
-              const metaIdx = piece.originalIndex;
-              const entry = metaIdx != null ? effectsByMetaIndex.get(metaIdx) : null;
-              logFx("fx-apply-lookup", `seg=${segmentNumber} pieceMetaIdx=${metaIdx} hasEntry=${!!entry} V.snap=${!!(entry && entry.video)} A.snap=${!!(entry && entry.audio)}`);
+              const piecePath = piece.path || "";
+              const pieceOrigStart = (piece.originalTimelineStart != null ? piece.originalTimelineStart : piece.timelineStart || 0).toFixed(2);
+              const lookupKey = `${piecePath}|${pieceOrigStart}`;
+              let entry = effectsByPath.get(lookupKey);
+              if (!entry) {
+                const sameSourceEntries = [...effectsByPath.entries()].filter(([k]) => k.startsWith(piecePath + "|"));
+                if (sameSourceEntries.length === 1) {
+                  entry = sameSourceEntries[0][1];
+                }
+              }
+              logFx("fx-apply-lookup", `seg=${segmentNumber} key=${piecePath.split("/").pop()}|${pieceOrigStart} hasEntry=${!!entry} V.snap=${!!(entry && entry.video)} A.snap=${!!(entry && entry.audio)}`);
               if (entry && (entry.video || entry.audio)) {
                 const afterInsert = await seqEditor2.getTrackItems(sequence);
                 const newVideoItem = afterInsert.videoItems.filter((vi) => vi.trackIndex === videoTrackIdx).sort((a, b) => b.start - a.start)[0];
