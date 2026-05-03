@@ -56,6 +56,20 @@ function isAuthorized(req) {
   }
 }
 
+// UXP plugin'i `~/.config/premier-seyo/token`'i okuyamadigi durumlarda
+// (Premiere fs sandbox'i bazen `~/.config` dizinine erisemiyor) Origin=null
+// + X-Premiere-Cut-Client=premierseyo-uxp ikilisi ile gelen istekler
+// "trusted plugin client" sayilir. Browser kaynakli siteler custom header
+// gonderebilmek icin CORS preflight'i gecmek zorunda; daemon yalnizca
+// Origin=null'a izin verdigi icin disaridan exploit edilemez.
+function isTrustedPluginClient(req) {
+  const client = String(req.headers["x-premiere-cut-client"] || "").trim();
+  if (client !== "premierseyo-uxp") return false;
+  const origin = String(req.headers.origin || "").trim();
+  if (origin && origin !== "null") return false;
+  return true;
+}
+
 // ——— Yardimci Fonksiyonlar ———
 
 function runCmd(command, args = [], timeoutMs = 600000) {
@@ -550,8 +564,15 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 404, { ok: false, error: `Route bulunamadi: ${key}` });
   }
 
-  if (key !== "GET /ping" && !isAuthorized(req)) {
-    return sendJson(res, 401, { ok: false, error: "Gecersiz veya eksik token" });
+  if (key !== "GET /ping") {
+    const tokenHeader = req.headers["x-premiere-cut-token"] || req.headers["X-Premiere-Cut-Token"] || "";
+    if (tokenHeader) {
+      if (!isAuthorized(req)) {
+        return sendJson(res, 401, { ok: false, error: "Gecersiz token" });
+      }
+    } else if (!isTrustedPluginClient(req)) {
+      return sendJson(res, 401, { ok: false, error: "Yetki gerekli (trusted plugin client veya token)" });
+    }
   }
 
   try {
