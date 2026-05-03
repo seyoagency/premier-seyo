@@ -706,7 +706,9 @@ async function handleTranscribe() {
     if (Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity && realSpeechStart > 0) {
       autoOffsetSec = realSpeechStart - whisperFirstWord;
       // Auto offset altyaziyi sesin ONUNE cekmemeli; sadece gecikmisse ileri al.
-      autoOffsetSec = Math.max(0, Math.min(2, autoOffsetSec));
+      // Sequence basinda uzun bosluk olabilir (orn. 30s intro), 2 saniye yetmez —
+      // 60 saniye'ye kadar izin ver. realSpeechStart silence-detect'ten dogru gelir.
+      autoOffsetSec = Math.max(0, Math.min(60, autoOffsetSec));
       if (autoOffsetSec < 0.04) autoOffsetSec = 0;
     }
     if (autoOffsetSec) {

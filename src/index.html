@@ -2057,7 +2057,7 @@ button::before {
         <label class="label-wide">Ekranda kelime sayısı <span class="label-hint">(1-12)</span></label>
         <div class="stepper">
           <div role="button" tabindex="0" class="stepper-btn" data-target="maxWordsPerCaption" data-dir="-1">-</div>
-          <span class="stepper-value" id="maxWordsPerCaption-val">6</span>
+          <span class="stepper-value" id="maxWordsPerCaption-val">3</span>
           <div role="button" tabindex="0" class="stepper-btn" data-target="maxWordsPerCaption" data-dir="1">+</div>
         </div>
         <span></span>
@@ -2095,11 +2095,11 @@ button::before {
           <span class="value" id="cpsLimit-val">20</span>
         </div>
         <div class="cbrow">
-          <input type="checkbox" id="splitOnSentence" checked />
+          <input type="checkbox" id="splitOnSentence" />
           <label for="splitOnSentence">Cumle sonunda bol</label>
         </div>
         <div class="cbrow">
-          <input type="checkbox" id="splitOnPause" checked />
+          <input type="checkbox" id="splitOnPause" />
           <label for="splitOnPause">Dogal duraklarda bol</label>
         </div>
       </div>
@@ -2237,7 +2237,7 @@ button::before {
   // src/utils/config.js
   var require_config = __commonJS({
     "src/utils/config.js"(exports, module) {
-      var STORAGE_KEY = "premierseyo-settings-v3";
+      var STORAGE_KEY = "premierseyo-settings-v4";
       var DEFAULTS = {
         silenceThreshold: -40,
         minSilenceDuration: 0.4,
@@ -4610,7 +4610,7 @@ ${cap.text}`;
       let autoOffsetSec = 0;
       if (Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity && realSpeechStart > 0) {
         autoOffsetSec = realSpeechStart - whisperFirstWord;
-        autoOffsetSec = Math.max(0, Math.min(2, autoOffsetSec));
+        autoOffsetSec = Math.max(0, Math.min(60, autoOffsetSec));
         if (autoOffsetSec < 0.04) autoOffsetSec = 0;
       }
       if (autoOffsetSec) {
