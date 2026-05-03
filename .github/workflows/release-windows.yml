@@ -11,6 +11,11 @@ on:
     tags:
       - "v*"
 
+# softprops/action-gh-release release olusturmak icin contents: write ister.
+# Default GITHUB_TOKEN sadece read olabiliyor; explicit permissions blogu garantiler.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build PremierSEYO-Setup-x64.exe
