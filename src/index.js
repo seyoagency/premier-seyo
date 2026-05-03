@@ -698,16 +698,20 @@ async function handleTranscribe() {
     // stepper/slider değişiminde Deepgram'a tekrar gitmeden regroup için saklanır.
     const rawSegments = segments;
 
-    // Auto-offset KAPATILDI: Deepgram word-level timestamp'leri zaten dogru
-    // (mixdown'in 0'indan itibaren). Onceki algoritma realSpeechStart vs
-    // whisperFirstWord farkini hesaplayip kelimeleri kaydiriyordu — Deepgram'in
-    // bazen silence icinde sahte kelime tanimasi durumunda yanlis yonde kayma
-    // yarariyordu. Artik sadece kullanicinin manual offset slider'i uygulaniyor.
+    // Auto-offset + stripSilenceOnlyWords KAPATILDI:
+    // Deepgram word-level timestamp'leri zaten dogru (mixdown'in 0'indan itibaren).
+    // Mixdown sequence'in mevcut halinden alindigi icin SRT timestamp'leri
+    // sequence timeline'iyla 1-1 ortusur — kullanicinin video sonunda yaptigi
+    // edit'lere gore konusmalar nerede baslarsa SRT de orada baslar.
+    //
+    // Onceki post-processing (auto-offset, stripSilenceOnlyWords) Deepgram'in
+    // dogru timestamp'lerini eski Whisper migration'i icin kaydiriyor + kelime
+    // atiyordu — bu yanlis yonde kaymaya neden oluyordu.
+    //
+    // Artik sadece manual offset slider'i uygulaniyor (default 0, kullanici
+    // ince ayar yapmak isterse).
     const autoOffsetSec = 0;
     const whisperFirstWord = findFirstSpeechStart(segments);
-    if (silenceRegions.length > 0) {
-      segments = stripSilenceOnlyWords(segments, silenceRegions);
-    }
 
     const manualOffsetSec = (preTranscribeSettings.subtitleOffsetMs || 0) / 1000;
     if (manualOffsetSec) {
@@ -715,8 +719,7 @@ async function handleTranscribe() {
     }
 
     setStatus(
-      `Konusma baslangici: ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s ` +
-      `(silence: ${realSpeechStart.toFixed(2)}s) — manuel offset: ${Math.round(manualOffsetSec * 1000)}ms`
+      `Konusma baslangici: ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s — manuel offset: ${Math.round(manualOffsetSec * 1000)}ms`
     );
 
     if (segments.length === 0) {

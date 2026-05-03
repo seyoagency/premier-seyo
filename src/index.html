@@ -4608,15 +4608,12 @@ ${cap.text}`;
       const rawSegments = segments;
       const autoOffsetSec = 0;
       const whisperFirstWord = findFirstSpeechStart(segments);
-      if (silenceRegions.length > 0) {
-        segments = stripSilenceOnlyWords(segments, silenceRegions);
-      }
       const manualOffsetSec = (preTranscribeSettings.subtitleOffsetMs || 0) / 1e3;
       if (manualOffsetSec) {
         segments = applyOffsetToSegments(segments, manualOffsetSec);
       }
       setStatus(
-        `Konusma baslangici: ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s (silence: ${realSpeechStart.toFixed(2)}s) \u2014 manuel offset: ${Math.round(manualOffsetSec * 1e3)}ms`
+        `Konusma baslangici: ${Number.isFinite(whisperFirstWord) && whisperFirstWord < Infinity ? whisperFirstWord.toFixed(2) : "?"}s \u2014 manuel offset: ${Math.round(manualOffsetSec * 1e3)}ms`
       );
       if (segments.length === 0) {
         throw new Error("Anlamli konusma segmenti bulunamadi");
