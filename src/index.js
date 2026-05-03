@@ -753,7 +753,24 @@ async function handleTranscribe() {
     }
 
     const settings = getCurrentSettings();
-    const captions = captionGrouper.group(allWords, settings);
+    let captions = captionGrouper.group(allWords, settings);
+
+    // Speech-relative: ilk caption'in start'ini 0'a sifirla, tum caption'lari
+    // sola kaydir. Boylelikle SRT konusmanin baslangicindan itibaren saymaya
+    // baslar (mixdown'in ilk N saniyelik bosluk kismi atlanir).
+    //
+    // Kullanici SRT'yi Premiere'e import ettiginde sequence'de konusmanin
+    // basladigi yere surukleyecek -> birebir senkronize. Onceden mixdown-absolute
+    // mod sequence basinda bosluk varsa SRT N saniye gec basliyor gibi
+    // gorunuyordu (kullanicinin "baslangicta kayma" gorbildirimi).
+    if (captions.length > 0 && captions[0].start > 0.05) {
+      const shift = captions[0].start;
+      captions = captions.map((c) => ({
+        ...c,
+        start: Math.max(0, c.start - shift),
+        end: Math.max(0, c.end - shift),
+      }));
+    }
 
     transcriptResult = {
       rawSegments,
@@ -823,7 +840,16 @@ function rerenderCaptions() {
   const allWords = flattenWordsFromSegments(segments);
   if (allWords.length === 0) return;
   try {
-    const captions = captionGrouper.group(allWords, settings);
+    let captions = captionGrouper.group(allWords, settings);
+    // Speech-relative: handleTranscribe ile ayni shift'i uygula
+    if (captions.length > 0 && captions[0].start > 0.05) {
+      const shift = captions[0].start;
+      captions = captions.map((c) => ({
+        ...c,
+        start: Math.max(0, c.start - shift),
+        end: Math.max(0, c.end - shift),
+      }));
+    }
     transcriptResult.segments = segments;
     transcriptResult.captions = captions;
     displaySRTPreview(captions);
