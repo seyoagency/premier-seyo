@@ -1,6 +1,6 @@
 {
   "name": "premier-seyo",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Auto-Cut silence/breath removal and Auto-SRT subtitle generation for Premiere Pro",
   "author": "SEYO",
   "license": "MIT",
