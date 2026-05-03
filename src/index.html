@@ -4640,7 +4640,15 @@ ${cap.text}`;
         throw new Error("Altyazi icin kullanilabilir kelime bulunamadi");
       }
       const settings = getCurrentSettings();
-      const captions = captionGrouper.group(allWords, settings);
+      let captions = captionGrouper.group(allWords, settings);
+      if (captions.length > 0 && captions[0].start > 0.05) {
+        const shift = captions[0].start;
+        captions = captions.map((c) => ({
+          ...c,
+          start: Math.max(0, c.start - shift),
+          end: Math.max(0, c.end - shift)
+        }));
+      }
       transcriptResult = {
         rawSegments,
         autoOffsetSec,
@@ -4701,7 +4709,15 @@ ${cap.text}`;
     const allWords = flattenWordsFromSegments(segments);
     if (allWords.length === 0) return;
     try {
-      const captions = captionGrouper.group(allWords, settings);
+      let captions = captionGrouper.group(allWords, settings);
+      if (captions.length > 0 && captions[0].start > 0.05) {
+        const shift = captions[0].start;
+        captions = captions.map((c) => ({
+          ...c,
+          start: Math.max(0, c.start - shift),
+          end: Math.max(0, c.end - shift)
+        }));
+      }
       transcriptResult.segments = segments;
       transcriptResult.captions = captions;
       displaySRTPreview(captions);
