@@ -392,19 +392,40 @@ function setupSteppers() {
   };
 
   document.querySelectorAll(".stepper-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
+    let lastTrigger = 0;
+    const handleStep = (e) => {
+      // Click + pointerdown çift tetiklemesini engelle (100ms cooldown)
+      const now = Date.now();
+      if (now - lastTrigger < 100) return;
+      lastTrigger = now;
+
       const target = btn.dataset.target;
       const dir = parseInt(btn.dataset.dir);
       const valEl = document.getElementById(`${target}-val`);
       const conf = stepperConfig[target];
       if (!valEl || !conf) return;
 
-      let val = parseInt(valEl.textContent) + dir;
+      const before = parseInt(valEl.textContent);
+      let val = before + dir;
       val = Math.max(conf.min, Math.min(conf.max, val));
+      if (val === before) return; // sınıra geldi, değişiklik yok
+
       valEl.textContent = val;
       saveCurrentSettings();
       // Stepper SRT'ye özel; transcript varsa Deepgram'a gitmeden yeniden grupla.
-      if (transcriptResult && typeof rerenderCaptions === "function") rerenderCaptions();
+      if (transcriptResult && typeof rerenderCaptions === "function") {
+        rerenderCaptions();
+      }
+      if (e && typeof e.preventDefault === "function") e.preventDefault();
+    };
+    // UXP'de <div role="button"> click bazı sürümlerde çalışmıyor — pointerdown
+    // + keyboard fallback ile her durumda tetiklenir.
+    btn.addEventListener("click", handleStep);
+    btn.addEventListener("pointerdown", handleStep);
+    btn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+        handleStep(e);
+      }
     });
   });
 }
